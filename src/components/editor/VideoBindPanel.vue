@@ -11,7 +11,7 @@
           <el-icon><VideoPlay /></el-icon>
         </template>
       </el-input>
-      <el-button @click="onUrlChange" :loading="resolving">识别</el-button>
+      <el-button @click="onUrlChange" :loading="resolving" class="btn-glass-pill">识别</el-button>
     </div>
 
     <!-- 识别结果预览 -->
@@ -20,7 +20,7 @@
         {{ platformLabel }}
       </el-tag>
       <span class="video-id-text">{{ resolved.videoId || resolved.videoUrl }}</span>
-      <el-button link type="danger" @click="clear">移除</el-button>
+      <el-button link @click="clear" class="text-error">移除</el-button>
     </div>
 
     <p class="bind-tip">

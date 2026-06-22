@@ -22,14 +22,18 @@ async function handleResponse<T>(response: Response): Promise<ApiResult<T>> {
       code: response.status,
       message: `HTTP错误: ${response.status} ${response.statusText}`,
     }))
-    throw new Error(error.message || '请求失败')
+    const err = new Error(error.message || '请求失败') as Error & { status?: number }
+    err.status = response.status
+    throw err
   }
 
   const result = await response.json()
-  
+
   // 检查业务逻辑错误
   if (result.code !== 200) {
-    throw new Error(result.message || '操作失败')
+    const err = new Error(result.message || '操作失败') as Error & { status?: number }
+    err.status = result.code
+    throw err
   }
 
   return result
@@ -61,8 +65,10 @@ function getHeaders(options?: RequestOptions, endpoint?: string): HeadersInit {
 
   // 对于认证相关的端点（登录、注册），不添加token
   const isAuthEndpoint = endpoint && (
-    endpoint.includes('/auth/login') || 
-    endpoint.includes('/auth/register')
+    endpoint.includes('/auth/login') ||
+    endpoint.includes('/auth/register') ||
+    endpoint.includes('/auth/forgot-password') ||
+    endpoint.includes('/auth/reset-password')
   )
   
   // 添加认证token（非认证端点才添加）
@@ -79,9 +85,21 @@ function getHeaders(options?: RequestOptions, endpoint?: string): HeadersInit {
 // 通用请求方法
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
   const { params, ...restOptions } = options
-  
+
   const url = buildUrl(endpoint, params)
-  const headers = getHeaders(options, endpoint)
+
+  // FormData 不能手动设置 Content-Type，让浏览器自动生成 boundary
+  const isFormData = restOptions.body instanceof FormData
+  let headers: HeadersInit
+  if (isFormData) {
+    headers = {}
+    const token = localStorage.getItem('token')
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+  } else {
+    headers = getHeaders(options, endpoint)
+  }
 
   const response = await fetch(url, {
     ...restOptions,
@@ -102,18 +120,20 @@ export function get<T>(endpoint: string, params?: Record<string, any>, options?:
 
 // POST请求
 export function post<T>(endpoint: string, data?: any, options?: RequestOptions): Promise<ApiResult<T>> {
+  const body = data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined)
   return request<T>(endpoint, {
     method: 'POST',
-    body: data ? JSON.stringify(data) : undefined,
+    body,
     ...options,
   })
 }
 
 // PUT请求
 export function put<T>(endpoint: string, data?: any, options?: RequestOptions): Promise<ApiResult<T>> {
+  const body = data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined)
   return request<T>(endpoint, {
     method: 'PUT',
-    body: data ? JSON.stringify(data) : undefined,
+    body,
     ...options,
   })
 }

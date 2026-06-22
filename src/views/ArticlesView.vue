@@ -4,6 +4,9 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { articleApi, categoryApi, searchApi, deepseekApi } from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
+import { useSwipeBack, usePullToRefresh } from '@/composables/useTouchGestures'
+import { createLongPressHandlers } from '@/composables/useLongPress'
+import MobileContextMenu from '@/components/mobile/MobileContextMenu.vue'
 import type { ArticleVO, ArticleQueryParams } from '@/types/article'
 import type { Category } from '@/types/category'
 import type { SearchResultVO } from '@/types/search'
@@ -11,6 +14,44 @@ import type { ChatRequest } from '@/types/ai'
 
 const router = useRouter()
 const authStore = useAuthStore()
+
+// Touch gestures
+useSwipeBack()
+const listContainerRef = ref<HTMLElement | null>(null)
+const { pullDistance, isPulling } = usePullToRefresh(listContainerRef, async () => {
+  searchParams.value.pageNum = 1
+  if (useEsSearch.value) {
+    await handleEsSearch()
+  } else {
+    await loadArticles()
+  }
+})
+
+// Context menu
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuArticle = ref<ArticleVO | null>(null)
+
+function showContextMenu(article: ArticleVO, e: TouchEvent) {
+  const touch = e.touches[0]
+  if (!touch) return
+  contextMenuX.value = touch.clientX
+  contextMenuY.value = touch.clientY
+  contextMenuArticle.value = article
+  contextMenuVisible.value = true
+}
+
+const contextMenuActions = computed(() => {
+  if (!contextMenuArticle.value) return []
+  return [
+    { label: '打开文章', handler: () => viewArticle(contextMenuArticle.value!.id) },
+    { label: '复制链接', handler: () => {
+      navigator.clipboard.writeText(`${window.location.origin}/articles/${contextMenuArticle.value!.id}`)
+      ElMessage.success('链接已复制')
+    }},
+  ]
+})
 
 // 数据
 const articles = ref<ArticleVO[]>([])
@@ -51,9 +92,9 @@ const loadArticles = async () => {
       status: 2,
     }
     const result = await articleApi.list(params)
-    // 适配新的分页结构:result.data 现在是 ArticlePageResult 对象,包含 list 和 total
+    // 适配新的分页结构:result.data 现在是 ArticlePageResult 对象,包含 records 和 total
     const pageResult = result.data as import('@/types/article').ArticlePageResult | undefined
-    articles.value = pageResult?.list || []
+    articles.value = pageResult?.records || []
     total.value = pageResult?.total || 0
   } catch (error: any) {
     ElMessage.error(error.message || '加载文章列表失败')
@@ -216,19 +257,13 @@ const handlePageChange = (pageNum: number) => {
   }
 }
 
-// 查看文章详情(在新标签页打开)
+// 查看文章详情
 const viewArticle = (id: number) => {
-  // 离开前保存搜索状态
   sessionStorage.setItem('articleSearch', JSON.stringify({
     params: searchParams.value,
     useEs: useEsSearch.value
   }))
-  
-  const routeUrl = router.resolve({
-    path: `/articles/${id}`,
-    query: { from: 'articles' }
-  })
-  window.open(routeUrl.href, '_blank')
+  router.push({ path: `/articles/${id}`, query: { from: 'articles' } })
 }
 
 
@@ -299,13 +334,22 @@ const optimizeSearchWithAI = async () => {
 }
 
 // 组件挂载时加载数据
-onMounted(() => {
-  // 检查登录状态
+onMounted(async () => {
+  // 等待用户信息加载完成（解决 authStore.fetchUserInfo 异步竞态）
+  if (!user.value) {
+    try {
+      await authStore.fetchUserInfo()
+    } catch {
+      // fetchUserInfo 失败（如 token 过期）会自动触发 logout 跳转，此处不再重复处理
+      return
+    }
+  }
+  // 再次检查登录状态
   if (!user.value) {
     router.push('/login')
     return
   }
-  
+
   // 恢复上次的搜索状态
   const saved = sessionStorage.getItem('articleSearch')
   if (saved) {
@@ -330,21 +374,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="cursor-articles-container">
-    <div class="cursor-section">
-      <div class="cursor-container">
-        <div class="cursor-articles-header">
-          <div class="header-left">
-            <h1 class="cursor-display-hero">公共文章</h1>
-            <p class="header-subtitle cursor-body-secondary">浏览和发现社区中的精彩内容</p>
-          </div>
-          <div class="header-actions">
+  <div class="relative overflow-hidden">
+    <!-- Ambient blob -->
+    <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
+
+    <div class="relative z-10 py-16">
+      <div class="max-w-[1200px] mx-auto px-6">
+        <!-- Header -->
+        <div class="flex justify-between items-start mb-10 pt-12">
+          <div>
+            <h1 class="cursor-display-hero text-slate-800 mb-2">公共文章</h1>
+            <p class="text-slate-500">浏览和发现社区中的精彩内容</p>
           </div>
         </div>
 
-        <!-- 搜索栏 -->
-        <div class="cursor-search-card cursor-card">
-          <div class="cursor-search-mode-toggle">
+        <!-- Search card — prominent glass -->
+        <div class="p-6 mb-8 glass-card rounded-2xl">
+          <div class="mb-5 pb-4 border-b border-slate-200/40">
             <el-switch
               v-model="useEsSearch"
               active-text="ES全文搜索"
@@ -352,34 +398,31 @@ onMounted(() => {
               @change="toggleSearchMode"
             />
           </div>
-                  
-          <!-- 统一搜索表单 -->
-          <el-form :model="searchParams" inline class="cursor-search-form">
-            <el-form-item label="关键词" class="cursor-search-item">
-              <div class="cursor-keyword-input-wrapper">
+
+          <el-form :model="searchParams" inline class="flex flex-wrap gap-4 items-end" @submit.prevent>
+            <el-form-item label="关键词" class="flex-1 min-w-[200px] !mb-0">
+              <div class="flex gap-2 items-center">
                 <el-input
                   v-model="searchParams.keyword"
                   :placeholder="useEsSearch ? '搜索标题、内容、摘要、标签' : '请输入文章标题关键词'"
                   clearable
                   @keyup.enter="handleSearch"
                   size="large"
+                  class="flex-1"
                 />
                 <el-button
                   v-if="useEsSearch"
-                  type="primary"
-                  plain
-                  size="small"
                   @click="optimizeSearchWithAI"
                   :loading="aiSearchProcessing"
-                  class="cursor-ai-optimize-button cursor-btn-pill"
+                  class="btn-glass-pill text-xs"
                 >
                   <el-icon><MagicStick /></el-icon>
                   AI优化
                 </el-button>
               </div>
             </el-form-item>
-                    
-            <el-form-item label="分类" class="cursor-search-item">
+
+            <el-form-item label="分类" class="min-w-[180px] !mb-0">
               <el-select
                 v-model="searchParams.categoryId"
                 placeholder="请选择分类"
@@ -394,11 +437,10 @@ onMounted(() => {
                   :label="category.name"
                   :value="category.id"
                 />
-                <el-option v-if="categories.length === 0" disabled label="暂无分类" />
               </el-select>
             </el-form-item>
-                    
-            <el-form-item v-if="useEsSearch" label="作者" class="cursor-search-item">
+
+            <el-form-item v-if="useEsSearch" label="作者" class="min-w-[180px] !mb-0">
               <el-input
                 v-model="searchParams.authorName"
                 placeholder="请输入作者名称"
@@ -406,113 +448,105 @@ onMounted(() => {
                 size="large"
               />
             </el-form-item>
-                    
-            <el-form-item class="cursor-search-actions">
-              <el-button 
+
+            <el-form-item class="!mb-0 flex gap-2">
+              <button
+                type="button"
                 @click="handleReset"
-                size="large"
-                plain
-                class="cursor-btn-pill"
+                class="btn-glass-pill"
               >
                 <el-icon><Refresh /></el-icon>
                 重置
-              </el-button>
-              <el-button 
-                type="primary" 
+              </button>
+              <button
+                type="button"
                 @click="handleSearch"
-                class="cursor-btn-primary"
-                size="large"
+                class="btn-primary"
               >
                 <el-icon><Search /></el-icon>
                 {{ useEsSearch ? 'ES搜索' : '搜索' }}
-              </el-button>
+              </button>
             </el-form-item>
           </el-form>
-                  
-          <div v-if="useEsSearch" class="cursor-search-tips cursor-caption">
-            <el-icon><InfoFilled /></el-icon>
-            <span>ES全文搜索支持标题、内容、摘要、标签的多字段匹配,并返回相关性排序结果</span>
+
+          <div v-if="useEsSearch" class="mt-4 px-3 py-2.5 bg-orange-50/70 backdrop-blur-sm border border-orange-200/60 rounded-lg flex items-center gap-2 text-sm text-orange-700">
+            <el-icon class="text-sm"><InfoFilled /></el-icon>
+            <span>ES全文搜索支持标题、内容、摘要、标签的多字段匹配</span>
           </div>
         </div>
 
-        <!-- 文章列表 -->
-        <div class="cursor-articles-list">
-          <div v-for="article in articles" :key="article.id" class="cursor-article-card cursor-card">
-            <div class="cursor-article-header">
-              <div class="cursor-article-title" @click="() => viewArticle(article.id)">
-                <h3 class="cursor-title-small">{{ article.title }}</h3>
-                <div class="cursor-article-meta">
-                  <span class="cursor-meta-item cursor-caption">
-                    <el-icon><User /></el-icon>
-                    {{ article.authorName || article.nickname || '未知用户' }}
-                  </span>
-                  <span class="cursor-meta-item cursor-caption">
-                    <el-icon><Clock /></el-icon>
-                    {{ formatTime(article.createdAt) }}
-                  </span>
-                  <span class="cursor-meta-item cursor-caption">
-                    <el-icon><Refresh /></el-icon>
-                    {{ formatTime(article.updatedAt) }}
-                  </span>
-                  <span class="cursor-meta-item cursor-caption">
-                    <el-icon><View /></el-icon>
-                    {{ article.viewCount || 0 }} 次阅读
-                  </span>
-                  <span v-if="article.tags && article.tags.length > 0" class="cursor-meta-item cursor-caption">
-                    <el-icon><PriceTag /></el-icon>
-                    {{ article.tags.map(tag => tag.name).join(', ') }}
-                  </span>
+        <!-- Pull to refresh indicator -->
+        <div v-if="pullDistance > 0" :style="{ height: pullDistance + 'px' }" class="flex items-center justify-center">
+          <div class="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+
+        <!-- Article list -->
+        <div ref="listContainerRef" class="flex flex-col gap-3.5 mb-16">
+          <div
+            v-for="(article, idx) in articles"
+            :key="article.id"
+            class="group p-6 glass-card rounded-2xl glass-card-hover hover:-translate-y-0.5 transition-all duration-200 cursor-pointer relative overflow-hidden"
+            @click="() => viewArticle(article.id)"
+            v-bind="createLongPressHandlers((e) => showContextMenu(article, e)).handlers"
+          >
+            <!-- Colored left accent strip, cycling through colors -->
+            <div
+              class="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl transition-colors"
+              :class="['bg-indigo-400','bg-blue-400','bg-emerald-400','bg-amber-400','bg-violet-400','bg-rose-400'][idx % 6]"
+            ></div>
+            <div class="flex justify-between items-start gap-4 pl-1">
+              <div class="flex-1 min-w-0">
+                <h3 class="text-lg font-semibold text-slate-800 mb-1.5 group-hover:text-orange-600 transition-colors truncate">{{ article.title }}</h3>
+                <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-400">
+                  <span class="font-medium text-slate-500">{{ article.authorName || article.nickname || article.username || '未知用户' }}</span>
+                  <span class="text-slate-300 select-none">·</span>
+                  <span>{{ formatTime(article.createTime || article.createdAt) }}</span>
+                  <span class="text-slate-300 select-none">·</span>
+                  <span>{{ article.viewCount || 0 }} 次阅读</span>
+                  <template v-if="article.tags && article.tags.length > 0">
+                    <span class="text-slate-300 select-none">·</span>
+                    <span class="text-indigo-500">{{ article.tags.map(t => t.name).join(', ') }}</span>
+                  </template>
                 </div>
               </div>
-              
-              <div class="cursor-article-actions">
-                <el-button 
-                  type="primary" 
-                  size="small" 
+              <div class="flex-shrink-0 ml-3" @click.stop>
+                <el-button
                   @click="() => viewArticle(article.id)"
-                  class="cursor-btn-pill"
+                  class="btn-glass-pill min-h-7 px-3 py-0.5 text-xs gap-1"
                 >
                   查看
                 </el-button>
               </div>
             </div>
-            
-            <div class="cursor-article-content-preview cursor-body-secondary">
-              {{ article.content?.substring(0, 150) || '无内容' }}...
-            </div>
-            
-            <div class="cursor-article-footer">
-              <div class="cursor-article-status">
-                <el-tag v-if="article.status === 2" type="success" class="cursor-status-tag">公开</el-tag>
-                <el-tag v-else-if="article.status === 1" type="info" class="cursor-status-tag">私密</el-tag>
-                <el-tag v-else type="warning" class="cursor-status-tag">草稿</el-tag>
-                
-                <el-tag v-if="article.aiStatus === 1" type="primary" class="cursor-ai-tag">
-                  <el-icon><MagicStick /></el-icon>
-                  AI已生成
-                </el-tag>
-              </div>
-              
-              <div class="cursor-article-summary cursor-caption" v-if="article.summary">
-                <el-icon><ChatDotSquare /></el-icon>
-                <span class="cursor-summary-text">{{ article.summary }}</span>
-              </div>
+
+            <p class="mt-3.5 pl-1 text-sm text-slate-500 leading-relaxed line-clamp-2">
+              {{ article.content?.substring(0, 200) || '无内容' }}...
+            </p>
+
+            <div class="flex items-center gap-2 mt-3 pt-3 pl-1 border-t border-slate-200/40">
+              <el-tag v-if="article.status === 2" size="small" effect="plain">公开</el-tag>
+              <el-tag v-else-if="article.status === 1" size="small" effect="plain" type="info">私密</el-tag>
+              <el-tag v-else size="small" effect="plain" type="warning">草稿</el-tag>
+              <el-tag v-if="article.aiStatus === 1" size="small" effect="plain" type="primary" class="inline-flex items-center gap-1">
+                <el-icon class="text-xs"><MagicStick /></el-icon>
+                AI
+              </el-tag>
             </div>
           </div>
-          
-          <!-- 空状态 -->
-          <div v-if="articles.length === 0 && !loading" class="cursor-empty-state">
+
+          <!-- Empty state -->
+          <div v-if="articles.length === 0 && !loading" class="py-16 text-center glass-card rounded-2xl">
             <el-empty description="暂无文章" />
           </div>
-          
-          <!-- 加载状态 -->
-          <div v-if="loading" class="cursor-loading-state">
+
+          <!-- Loading state -->
+          <div v-if="loading" class="p-6 text-center glass-card rounded-2xl">
             <el-skeleton :rows="5" animated />
           </div>
         </div>
 
-        <!-- 分页 -->
-        <div v-if="articles.length > 0" class="cursor-pagination">
+        <!-- Pagination -->
+        <div v-if="articles.length > 0" class="flex justify-center py-6 mb-12">
           <el-pagination
             v-model:current-page="searchParams.pageNum"
             v-model:page-size="searchParams.pageSize"
@@ -525,318 +559,18 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Context Menu -->
+    <MobileContextMenu
+      :visible="contextMenuVisible"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :actions="contextMenuActions"
+      @close="contextMenuVisible = false"
+    />
   </div>
 </template>
 
 <style scoped>
-.cursor-articles-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-}
-
-.cursor-articles-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-40);
-  padding-top: var(--space-80);
-}
-
-.cursor-articles-header h1 {
-  text-align: left;
-  margin-bottom: var(--space-8);
-}
-
-.header-left h1 {
-  margin: 0 0 var(--space-8) 0;
-  color: var(--cursor-dark);
-  text-align: left;
-}
-
-.header-subtitle {
-  margin: 0;
-  color: var(--border-strong);
-}
-
-.header-actions {
-  display: flex;
-  gap: var(--space-12);
-  align-items: center;
-}
-
-.cursor-search-card {
-  padding: var(--space-24);
-  margin-bottom: var(--space-40);
-}
-
-.cursor-search-mode-toggle {
-  margin-bottom: var(--space-20);
-  padding-bottom: var(--space-16);
-  border-bottom: 1px solid var(--border-primary-fallback);
-}
-
-.cursor-search-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-16);
-  align-items: flex-end;
-}
-
-.cursor-search-item {
-  margin-bottom: 0;
-  flex: 1;
-  min-width: 200px;
-}
-
-.cursor-search-actions {
-  margin-bottom: 0;
-}
-
-.cursor-keyword-input-wrapper {
-  display: flex;
-  gap: var(--space-8);
-  align-items: center;
-}
-
-.cursor-keyword-input-wrapper .el-input {
-  flex: 1;
-}
-
-.cursor-ai-optimize-button {
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-size: 12px;
-  padding: 3px 8px;
-}
-
-.cursor-search-tips {
-  margin-top: var(--space-16);
-  padding: var(--space-12);
-  background: var(--surface-100);
-  border-radius: var(--radius-comfortable);
-  border: 1px solid var(--border-primary-fallback);
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  color: var(--cursor-orange);
-}
-
-.cursor-search-tips .el-icon {
-  font-size: 14px;
-}
-
-.cursor-articles-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-24);
-  margin-bottom: var(--space-80);
-}
-
-.cursor-article-card {
-  transition: transform 200ms ease, box-shadow 200ms ease;
-  cursor: pointer;
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: none;
-  padding: var(--space-32);
-}
-
-.cursor-article-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-card);
-}
-
-.cursor-article-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-16);
-}
-
-.cursor-article-title {
-  flex: 1;
-  cursor: pointer;
-}
-
-.cursor-article-title h3 {
-  margin: 0 0 var(--space-12) 0;
-  color: var(--cursor-dark);
-  transition: color 150ms ease;
-  text-align: left;
-}
-
-.cursor-article-title:hover h3 {
-  color: var(--cursor-orange);
-}
-
-.cursor-article-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-16);
-}
-
-.cursor-meta-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  color: var(--border-strong);
-}
-
-.cursor-article-actions {
-  display: flex;
-  gap: var(--space-8);
-  flex-shrink: 0;
-}
-
-.cursor-article-content-preview {
-  color: var(--border-strong);
-  line-height: 1.6;
-  margin-bottom: var(--space-16);
-  padding: var(--space-12) 0;
-  border-top: 1px dashed var(--border-primary-fallback);
-  border-bottom: 1px dashed var(--border-primary-fallback);
-}
-
-.cursor-article-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-12);
-}
-
-.cursor-article-status {
-  display: flex;
-  gap: var(--space-8);
-}
-
-.cursor-status-tag,
-.cursor-ai-tag {
-  font-family: var(--font-system);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.048px;
-  border-radius: var(--radius-pill) !important;
-  padding: 3px 8px !important;
-}
-
-.cursor-article-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  color: var(--border-strong);
-  font-size: 11px;
-  background: var(--surface-100);
-  padding: var(--space-6) var(--space-12);
-  border-radius: var(--radius-small);
-  flex: 1;
-  max-width: 500px;
-}
-
-.cursor-summary-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cursor-empty-state {
-  text-align: center;
-  padding: var(--space-60) 0;
-  background: var(--surface-400);
-  border-radius: var(--radius-comfortable);
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: none;
-}
-
-.cursor-loading-state {
-  padding: var(--space-20);
-  background: var(--surface-400);
-  border-radius: var(--radius-comfortable);
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: none;
-  text-align: center;
-}
-
-.cursor-pagination {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-24) 0;
-  background: var(--surface-400);
-  border-radius: var(--radius-comfortable);
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: none;
-  margin-bottom: var(--space-80);
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .cursor-articles-header {
-    flex-direction: column;
-    gap: var(--space-16);
-    align-items: flex-start;
-    padding-top: var(--space-40);
-  }
-  
-  .header-left h1 {
-    font-size: 36px;
-    line-height: 1.20;
-    letter-spacing: -0.72px;
-  }
-  
-  .cursor-search-card {
-    padding: var(--space-16);
-  }
-  
-  .cursor-search-mode-toggle {
-    margin-bottom: var(--space-16);
-    padding-bottom: var(--space-12);
-  }
-  
-  .cursor-search-form {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .cursor-search-item {
-    min-width: 100%;
-  }
-  
-  .cursor-article-header {
-    flex-direction: column;
-    gap: var(--space-16);
-  }
-  
-  .cursor-article-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-  
-  .cursor-article-footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .cursor-article-summary {
-    max-width: 100%;
-  }
-  
-  .cursor-pagination {
-    padding: var(--space-16) 0;
-  }
-}
-
-@media (max-width: 600px) {
-  .header-left h1 {
-    font-size: 26px;
-    letter-spacing: -0.325px;
-  }
-  
-  .cursor-article-card {
-    padding: var(--space-16);
-  }
-  
-  .cursor-article-meta {
-    flex-direction: column;
-    gap: var(--space-8);
-  }
-}
+/* All styles applied via Tailwind utility classes in template */
 </style>

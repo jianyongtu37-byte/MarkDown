@@ -25,6 +25,24 @@ export interface RegisterRequest {
   email?: string
 }
 
+// 忘记密码
+export interface ForgotPasswordRequest {
+  email: string
+}
+
+// 重置密码
+export interface ResetPasswordRequest {
+  token: string
+  userId: string
+  newPassword: string
+}
+
+// 验证重置令牌
+export interface TokenValidateResult {
+  valid: boolean
+  message?: string
+}
+
 // API响应类型
 export interface ApiResult<T = any> {
   code: number

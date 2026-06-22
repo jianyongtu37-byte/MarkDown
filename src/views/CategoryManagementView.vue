@@ -5,10 +5,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { User } from '@element-plus/icons-vue'
 import { categoryApi } from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
+import { useLayout } from '@/composables/useLayout'
 import type { Category, CategoryCreateDTO, CategoryUpdateDTO } from '@/types/category'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { isMobile } = useLayout()
 
 const categories = ref<Category[]>([])
 const loading = ref(false)
@@ -130,7 +132,11 @@ const formatTime = (time?: string) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 等待用户信息加载完成（解决 authStore.fetchUserInfo 异步竞态）
+  if (!user.value) {
+    await authStore.fetchUserInfo()
+  }
   if (!user.value) {
     router.push('/login')
     return
@@ -140,232 +146,147 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="cat-container">
-    <div class="cat-inner">
+  <div class="relative min-h-screen overflow-hidden">
+    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
 
-      <!-- 页头 -->
-      <div class="cat-header">
-        <div class="header-left">
-          <el-button @click="backToArticles" round plain size="small">
-            <el-icon><ArrowLeft /></el-icon> 返回文章列表
-          </el-button>
-          <h1>分类管理</h1>
-        </div>
-        <el-button type="primary" round @click="openCreateDialog">
-          <el-icon><Plus /></el-icon> 新建分类
-        </el-button>
-      </div>
+    <section class="relative z-10 py-16">
+      <div class="max-w-[860px] mx-auto px-6">
 
-      <div v-if="loading" class="cat-loading">
-        <el-skeleton :rows="4" animated />
-      </div>
-
-      <template v-else>
-
-        <!-- ── 系统默认分类 ── -->
-        <div class="cat-group">
-          <div class="group-label">
-            <i class="dot dot-gray"></i>
-            <span class="group-title">系统默认分类</span>
-            <el-tag size="small" type="info" effect="plain">{{ defaultCategories.length }} 个</el-tag>
-            <span class="group-hint">由系统提供，不可修改</span>
+        <!-- 页头 -->
+        <div class="flex justify-between items-center mb-8 pt-12">
+          <div class="flex items-center gap-4">
+            <button @click="backToArticles" class="btn-glass-pill text-xs">
+              <el-icon><ArrowLeft /></el-icon> 返回文章列表
+            </button>
+            <h1 class="cursor-display-hero text-slate-800 mb-0">分类管理</h1>
           </div>
-          <div class="cat-list" v-if="defaultCategories.length">
-            <div v-for="c in defaultCategories" :key="c.id" class="cat-row row-sys">
-              <i class="accent accent-gray"></i>
-              <span class="cat-name">{{ c.name }}</span>
-              <el-tag size="small" type="info" effect="light" class="sys-tag">系统</el-tag>
-              <span class="cat-meta">排序 {{ c.sortOrder || 0 }}</span>
-              <span class="cat-meta">{{ formatTime(c.createdAt) }}</span>
-              <span class="readonly-badge">
-                <el-icon><Lock /></el-icon> 只读
-              </span>
+          <button @click="openCreateDialog" class="btn-primary px-4">
+            <el-icon><Plus /></el-icon> 新建分类
+          </button>
+        </div>
+
+        <div v-if="loading" class="p-5 glass-card rounded-2xl">
+          <el-skeleton :rows="4" animated />
+        </div>
+
+        <template v-else>
+
+          <!-- ── 系统默认分类 ── -->
+          <div class="mb-7">
+            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200/50">
+              <i class="inline-block w-2 h-2 rounded-full flex-shrink-0" style="background:#b4b2a9"></i>
+              <span class="text-[13px] font-semibold text-slate-800">系统默认分类</span>
+              <el-tag size="small" type="info" effect="plain">{{ defaultCategories.length }} 个</el-tag>
+              <span class="text-[11px] text-slate-400 ml-auto">由系统提供，不可修改</span>
+            </div>
+            <div v-if="defaultCategories.length" class="rounded-2xl overflow-hidden glass-card">
+              <div v-for="c in defaultCategories" :key="c.id" class="flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 border-b border-slate-200/50 last:border-b-0 transition-colors duration-150 hover:bg-slate-100/50">
+                <i class="w-[3px] h-[22px] rounded-[2px] flex-shrink-0" style="background:#b4b2a9"></i>
+                <span class="text-sm font-medium text-slate-800 flex-1">{{ c.name }}</span>
+                <el-tag size="small" type="info" effect="light">系统</el-tag>
+                <span class="text-[11px] text-slate-400">排序 {{ c.sortOrder || 0 }}</span>
+                <span class="text-[11px] text-slate-400">{{ formatTime(c.createdAt) }}</span>
+                <span class="flex items-center gap-1 text-[11px] text-slate-400 flex-shrink-0">
+                  <el-icon><Lock /></el-icon> 只读
+                </span>
+              </div>
+            </div>
+            <p v-else class="text-[13px] text-slate-400 px-4 py-3.5">暂无系统默认分类</p>
+          </div>
+
+          <!-- ── 自定义分类 ── -->
+          <div class="mb-7">
+            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200/50">
+              <i class="inline-block w-2 h-2 rounded-full flex-shrink-0" style="background:#378add"></i>
+              <span class="text-[13px] font-semibold text-slate-800">自定义分类</span>
+              <el-tag size="small" type="primary" effect="plain">{{ customCategories.length }} 个</el-tag>
+            </div>
+            <div v-if="customCategories.length" class="rounded-2xl overflow-hidden glass-card">
+              <div v-for="c in customCategories" :key="c.id" class="flex items-center gap-3 px-4 py-2.5 border-b border-slate-200/50 last:border-b-0 transition-colors duration-150 hover:bg-slate-50/50">
+                <i class="w-[3px] h-[22px] rounded-[2px] flex-shrink-0" style="background:#378add"></i>
+                <span class="text-sm font-medium text-slate-800 flex-1">{{ c.name }}</span>
+                <span class="text-[11px] text-slate-400">排序 {{ c.sortOrder || 0 }}</span>
+                <span class="text-[11px] text-slate-400">{{ formatTime(c.updatedAt) }}</span>
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  <button :disabled="c.sortOrder === 1"
+                    @click="updateSortOrder(c.id!, (c.sortOrder||1)-1)" class="btn-glass-pill text-xs rounded-full">
+                    <el-icon><ArrowUp /></el-icon>
+                  </button>
+                  <button
+                    @click="updateSortOrder(c.id!, (c.sortOrder||1)+1)" class="btn-glass-pill text-xs rounded-full">
+                    <el-icon><ArrowDown /></el-icon>
+                  </button>
+                  <button @click="openEditDialog(c)" class="btn-glass-pill text-xs">编辑</button>
+                  <button @click="deleteCategory(c.id!)" class="btn-glass-pill text-xs">删除</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="py-10 text-center">
+              <el-empty description="还没有自定义分类">
+                <button @click="openCreateDialog" class="btn-primary px-4">创建第一个分类</button>
+              </el-empty>
             </div>
           </div>
-          <p v-else class="empty-inline">暂无系统默认分类</p>
-        </div>
 
-        <!-- ── 自定义分类 ── -->
-        <div class="cat-group">
-          <div class="group-label">
-            <i class="dot dot-blue"></i>
-            <span class="group-title">自定义分类</span>
-            <el-tag size="small" type="primary" effect="plain">{{ customCategories.length }} 个</el-tag>
-          </div>
-          <div class="cat-list" v-if="customCategories.length">
-            <div v-for="c in customCategories" :key="c.id" class="cat-row">
-              <i class="accent accent-blue"></i>
-              <span class="cat-name">{{ c.name }}</span>
-              <span class="cat-meta">排序 {{ c.sortOrder || 0 }}</span>
-              <span class="cat-meta">{{ formatTime(c.updatedAt) }}</span>
-              <div class="cat-actions">
-                <el-button size="small" :disabled="c.sortOrder === 1"
-                  @click="updateSortOrder(c.id!, (c.sortOrder||1)-1)" circle>
-                  <el-icon><ArrowUp /></el-icon>
-                </el-button>
-                <el-button size="small"
-                  @click="updateSortOrder(c.id!, (c.sortOrder||1)+1)" circle>
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <el-button size="small" @click="openEditDialog(c)">编辑</el-button>
-                <el-button size="small" type="danger" plain @click="deleteCategory(c.id!)">删除</el-button>
+          <!-- ── 其他用户分类（仅管理员） ── -->
+          <div v-if="isAdmin && otherUserCategories.length" class="mb-7">
+            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-200/50">
+              <i class="inline-block w-2 h-2 rounded-full flex-shrink-0" style="background:#ef9f27"></i>
+              <span class="text-[13px] font-semibold text-slate-800">其他用户分类</span>
+              <el-tag size="small" type="warning" effect="plain">{{ otherUserCategories.length }} 个</el-tag>
+              <span class="text-[11px] text-slate-400 ml-auto">管理员可管理所有用户分类</span>
+            </div>
+            <div class="rounded-2xl overflow-hidden glass-card">
+              <div v-for="c in otherUserCategories" :key="c.id" class="flex items-center gap-3 px-4 py-2.5 border-b border-slate-200/50 last:border-b-0 transition-colors duration-150 hover:bg-slate-50/50">
+                <i class="w-[3px] h-[22px] rounded-[2px] flex-shrink-0" style="background:#ef9f27"></i>
+                <span class="text-sm font-medium text-slate-800 flex-1">{{ c.name }}</span>
+                <span class="text-[11px] text-slate-400">用户 {{ c.userId }}</span>
+                <span class="text-[11px] text-slate-400">排序 {{ c.sortOrder || 0 }}</span>
+                <span class="text-[11px] text-slate-400">{{ formatTime(c.updatedAt) }}</span>
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  <button :disabled="c.sortOrder === 1"
+                    @click="updateSortOrder(c.id!, (c.sortOrder||1)-1)" class="btn-glass-pill text-xs rounded-full">
+                    <el-icon><ArrowUp /></el-icon>
+                  </button>
+                  <button
+                    @click="updateSortOrder(c.id!, (c.sortOrder||1)+1)" class="btn-glass-pill text-xs rounded-full">
+                    <el-icon><ArrowDown /></el-icon>
+                  </button>
+                  <button @click="openEditDialog(c)" class="btn-glass-pill text-xs">编辑</button>
+                  <button @click="deleteCategory(c.id!)" class="btn-glass-pill text-xs">删除</button>
+                </div>
               </div>
             </div>
           </div>
-          <div v-else class="empty-state">
-            <el-empty description="还没有自定义分类">
-              <el-button type="primary" round @click="openCreateDialog">创建第一个分类</el-button>
-            </el-empty>
-          </div>
-        </div>
 
-        <!-- ── 其他用户分类（仅管理员） ── -->
-        <div v-if="isAdmin && otherUserCategories.length" class="cat-group">
-          <div class="group-label">
-            <i class="dot dot-amber"></i>
-            <span class="group-title">其他用户分类</span>
-            <el-tag size="small" type="warning" effect="plain">{{ otherUserCategories.length }} 个</el-tag>
-            <span class="group-hint">管理员可管理所有用户分类</span>
-          </div>
-          <div class="cat-list">
-            <div v-for="c in otherUserCategories" :key="c.id" class="cat-row">
-              <i class="accent accent-amber"></i>
-              <span class="cat-name">{{ c.name }}</span>
-              <span class="cat-meta">用户 {{ c.userId }}</span>
-              <span class="cat-meta">排序 {{ c.sortOrder || 0 }}</span>
-              <span class="cat-meta">{{ formatTime(c.updatedAt) }}</span>
-              <div class="cat-actions">
-                <el-button size="small" :disabled="c.sortOrder === 1"
-                  @click="updateSortOrder(c.id!, (c.sortOrder||1)-1)" circle>
-                  <el-icon><ArrowUp /></el-icon>
-                </el-button>
-                <el-button size="small"
-                  @click="updateSortOrder(c.id!, (c.sortOrder||1)+1)" circle>
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <el-button size="small" @click="openEditDialog(c)">编辑</el-button>
-                <el-button size="small" type="danger" plain @click="deleteCategory(c.id!)">删除</el-button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </template>
+      </div>
+    </section>
 
+    <!-- 对话框 -->
+    <el-dialog v-model="dialogVisible" :title="isEditMode ? '编辑分类' : '新建分类'"
+      :width="isMobile ? '90%' : '480px'" :close-on-click-modal="false">
+      <el-form :model="formData" label-width="80px">
+        <el-form-item label="分类名称" required>
+          <el-input v-model="formData.name" placeholder="请输入分类名称" maxlength="50" show-word-limit />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="formData.description" type="textarea" :rows="3"
+            placeholder="请输入分类描述" maxlength="200" show-word-limit />
+        </el-form-item>
+        <el-form-item label="排序值">
+          <el-input-number v-model="formData.sortOrder" :min="0" :max="999" controls-position="right" />
+          <div style="font-size:12px;color:var(--el-text-color-secondary);margin-top:4px">数值越小排序越靠前</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <button class="btn-glass-pill" @click="dialogVisible = false">取消</button>
+        <button class="btn-primary px-4" :disabled="dialogLoading" @click="saveCategory">保存</button>
       </template>
-    </div>
+    </el-dialog>
   </div>
-
-  <!-- 对话框保持不变 -->
-  <el-dialog v-model="dialogVisible" :title="isEditMode ? '编辑分类' : '新建分类'"
-    width="480px" :close-on-click-modal="false">
-    <el-form :model="formData" label-width="80px">
-      <el-form-item label="分类名称" required>
-        <el-input v-model="formData.name" placeholder="请输入分类名称" maxlength="50" show-word-limit />
-      </el-form-item>
-      <el-form-item label="描述">
-        <el-input v-model="formData.description" type="textarea" :rows="3"
-          placeholder="请输入分类描述" maxlength="200" show-word-limit />
-      </el-form-item>
-      <el-form-item label="排序值">
-        <el-input-number v-model="formData.sortOrder" :min="0" :max="999" controls-position="right" />
-        <div style="font-size:12px;color:var(--el-text-color-secondary);margin-top:4px">数值越小排序越靠前</div>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button round @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" round @click="saveCategory" :loading="dialogLoading">保存</el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <style scoped>
-.cat-container { min-height: 100vh; }
-.cat-inner { max-width: 860px; margin: 0 auto; padding: 40px 24px 60px; }
-
-/* 页头 */
-.cat-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 32px;
-}
-.header-left { display: flex; align-items: center; gap: 16px; }
-.cat-header h1 { font-size: 20px; font-weight: 500; margin: 0; }
-
-/* 分组 */
-.cat-group { margin-bottom: 28px; }
-
-.group-label {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 8px; padding-bottom: 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.group-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
-.group-hint { font-size: 11px; color: var(--el-text-color-placeholder); margin-left: auto; }
-
-/* 颜色点 */
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot-gray  { background: #b4b2a9; }
-.dot-blue  { background: #378add; }
-.dot-amber { background: #ef9f27; }
-
-/* 列表容器 */
-.cat-list {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px; overflow: hidden;
-}
-
-/* 每一行 */
-.cat-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  transition: background .15s;
-}
-.cat-row:last-child { border-bottom: none; }
-.cat-row:hover { background: var(--el-fill-color-light); }
-
-/* 系统分类行背景稍暗 */
-.row-sys { background: var(--el-fill-color-lighter); }
-.row-sys:hover { background: var(--el-fill-color-light); }
-
-/* 左侧色条 */
-.accent {
-  width: 3px; height: 22px; border-radius: 2px; flex-shrink: 0;
-}
-.accent-gray  { background: #b4b2a9; }
-.accent-blue  { background: #378add; }
-.accent-amber { background: #ef9f27; }
-
-.cat-name { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; }
-.sys-tag  { flex-shrink: 0; }
-
-.cat-meta {
-  font-size: 11px; color: var(--el-text-color-secondary);
-  flex-shrink: 0; white-space: nowrap;
-}
-
-.readonly-badge {
-  display: flex; align-items: center; gap: 4px;
-  font-size: 11px; color: var(--el-text-color-placeholder);
-  flex-shrink: 0;
-}
-
-.cat-actions {
-  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
-}
-
-/* 空态 */
-.empty-state { padding: 40px 0; text-align: center; }
-.empty-inline { font-size: 13px; color: var(--el-text-color-placeholder); padding: 14px 18px; }
-
-.cat-loading {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px; padding: 20px;
-}
-
-@media (max-width: 640px) {
-  .cat-header { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .group-hint { display: none; }
-  .cat-row { flex-wrap: wrap; }
-  .cat-actions { width: 100%; justify-content: flex-end; padding-top: 4px; }
-}
+/* All styles applied via Tailwind utility classes in template */
 </style>

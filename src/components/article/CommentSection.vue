@@ -1,5 +1,5 @@
 <template>
-  <div class="cursor-comment-section">
+  <div>
     <!-- 评论标题 -->
     <div class="comment-section-header">
       <h3 class="comment-title">
@@ -20,16 +20,15 @@
         resize="none"
       />
       <div class="comment-input-actions">
-        <el-button v-if="replyTo" size="small" @click="cancelReply" class="cursor-btn-pill">
+        <el-button v-if="replyTo" size="small" @click="cancelReply" class="btn-glass-pill min-h-7 px-2.5 py-0.5 text-xs">
           取消回复
         </el-button>
         <el-button
-          type="primary"
           size="small"
           :loading="submitting"
           :disabled="!newComment.trim()"
           @click="submitComment"
-          class="cursor-btn-primary"
+          class="btn-glass-pill min-h-7 px-2.5 py-0.5 text-xs"
         >
           发表评论
         </el-button>
@@ -66,7 +65,6 @@
             <div class="comment-content">{{ comment.content }}</div>
             <div class="comment-actions">
               <el-button
-                type="primary"
                 link
                 size="small"
                 @click="startReply(comment)"
@@ -75,7 +73,6 @@
               </el-button>
               <el-button
                 v-if="comment.userId === currentUserId"
-                type="danger"
                 link
                 size="small"
                 @click="handleDelete(comment.id)"
@@ -183,7 +180,7 @@ const loadComments = async () => {
       pageSize: pageSize.value
     })
     if (result.data) {
-      comments.value = result.data.list || []
+      comments.value = result.data.records || []
       totalComments.value = result.data.total || 0
     }
   } catch (error: any) {
@@ -288,13 +285,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.cursor-comment-section {
-  margin-top: 24px;
-  padding: 24px;
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-}
 
 .comment-section-header {
   margin-bottom: 20px;

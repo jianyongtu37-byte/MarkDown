@@ -8,8 +8,10 @@ export interface Article {
   aiStatus?: number
   status?: number  // 0-草稿 (DRAFT), 1-仅自己可见 (PRIVATE), 2-公开可见 (PUBLIC)
   viewCount?: number
-  createdAt?: string
-  updatedAt?: string
+  createTime?: string
+  updateTime?: string
+  createdAt?: string  // 兼容旧字段名
+  updatedAt?: string  // 兼容旧字段名
 }
 
 // 文章创建DTO - 根据后端接口变更更新
@@ -36,12 +38,18 @@ export interface ArticleVO {
   status?: number  // 0-草稿 (DRAFT), 1-仅自己可见 (PRIVATE), 2-公开可见 (PUBLIC)
   isPublic?: number  // 保留字段，可能已废弃（现在状态由status字段控制）
   viewCount?: number
-  createdAt?: string
-  updatedAt?: string
+  likeCount?: number
+  commentCount?: number
+  favoriteCount?: number
+  createTime?: string
+  updateTime?: string
+  createdAt?: string  // 兼容旧字段名
+  updatedAt?: string  // 兼容旧字段名
   tags?: Tag[]
   summary?: string
   authorName?: string
   nickname?: string
+  username?: string
   categoryName?: string
 }
 
@@ -102,7 +110,7 @@ import type { ApiResult } from './user'
 
 // 文章分页响应对象
 export interface ArticlePageResult {
-  list: ArticleVO[]
+  records: ArticleVO[]
   total: number
   pageNum?: number
   pageSize?: number
@@ -110,5 +118,14 @@ export interface ArticlePageResult {
 
 // 文章相关API响应类型
 export interface ArticleListResult extends ApiResult<ArticlePageResult> {
-  // 现在data字段是ArticlePageResult对象，包含list和total
+  // 现在data字段是ArticlePageResult对象，包含records和total
 }
+
+// 文章导入 - URL导入请求
+export interface ArticleImportUrlRequest {
+  url: string
+  categoryId?: number
+}
+
+// 文章导入响应（data为导入成功的文章ID列表或单个ID）
+export type ArticleImportResult = number[]

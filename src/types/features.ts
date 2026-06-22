@@ -2,7 +2,7 @@
 
 // ===== 通用分页 =====
 export interface PageResult<T> {
-  list: T[]
+  records: T[]
   total: number
   pageNum?: number
   pageSize?: number
@@ -128,4 +128,64 @@ export interface ExportResult {
   recordId: number
   filePath: string
   fileName: string
+}
+
+// ===== 阅读历史 =====
+export interface ReadingHistoryVO {
+  id: number
+  articleId: number
+  title: string
+  authorName: string
+  progress: number
+  lastPosition: string
+  lastReadTime: string
+}
+
+// ===== 文章系列/合集 =====
+export interface SeriesArticleItem {
+  id: number
+  title: string
+  sortOrder: number
+}
+
+export interface ArticleSeriesVO {
+  id: number
+  title: string
+  description: string | null
+  coverImageUrl: string | null
+  authorName: string
+  articleCount: number
+  isPublic: number
+  articles: SeriesArticleItem[]
+  createTime: string
+  updateTime: string
+}
+
+export interface CreateSeriesDTO {
+  title: string
+  description?: string
+  isPublic?: boolean
+  articleIds?: number[]
+}
+
+export interface UpdateSeriesDTO {
+  title?: string
+  description?: string
+  isPublic?: boolean
+}
+
+export interface AddArticleToSeriesDTO {
+  articleId: number
+  sortOrder?: number
+}
+
+export interface SortSeriesArticlesDTO {
+  articleIds: number[]
+}
+
+export interface AvailableArticle {
+  id: number
+  title: string
+  status: number
+  createTime: string
 }

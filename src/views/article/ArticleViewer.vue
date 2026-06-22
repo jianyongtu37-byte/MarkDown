@@ -19,7 +19,7 @@
       <main class="viewer-main" ref="mainRef">
         <!-- 顶部操作栏 -->
         <div class="article-actions-bar">
-          <button class="btn-back" @click="backToList">
+          <button class="btn-glass-pill" @click="backToList">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7"/>
             </svg>
@@ -27,17 +27,17 @@
           </button>
 
           <div v-if="canEditOrDelete" class="actions-right">
-            <el-button type="warning" @click="editArticle" class="cursor-btn-pill" size="small">
+            <el-button @click="editArticle" class="btn-glass-pill text-xs">
               <el-icon><Edit /></el-icon> 编辑
             </el-button>
-            <el-button type="danger" plain @click="deleteArticle" class="cursor-btn-pill" size="small">
+            <el-button @click="deleteArticle" class="btn-glass-pill text-xs">
               <el-icon><Delete /></el-icon> 删除
             </el-button>
           </div>
         </div>
 
         <!-- 视频播放器 -->
-        <div v-if="videoMeta" class="video-section">
+        <div v-if="videoMeta" class="glass-card rounded-2xl overflow-hidden">
           <VideoPlayer
             ref="playerRef"
             :video-meta="videoMeta"
@@ -46,7 +46,7 @@
         </div>
 
         <!-- 文章头部信息 -->
-        <div class="article-header" v-if="store.detail">
+        <div class="glass-card rounded-2xl overflow-hidden" v-if="store.detail">
           <div class="article-header-inner">
             <!-- 状态标签行 -->
             <div class="article-tags-row">
@@ -71,12 +71,13 @@
             <div class="article-meta">
               <span class="meta-item">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                {{ store.detail.authorName || store.detail.nickname || '未知用户' }}
+                {{ store.detail.authorName || store.detail.nickname || store.detail.username || '未知用户' }}
+                <span class="text-slate-400">(ID: {{ store.detail.userId }})</span>
               </span>
               <span class="meta-divider">·</span>
               <span class="meta-item">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                {{ formatTime(store.detail.createdAt) }}
+                {{ formatTime(store.detail.createTime || store.detail.createdAt) }}
               </span>
               <span class="meta-divider">·</span>
               <span class="meta-item">
@@ -99,8 +100,14 @@
           </div>
         </div>
 
+        <!-- 知识图谱面板 -->
+        <KnowledgeGraphPanel
+          v-if="articleId"
+          :article-id="Number(articleId)"
+        />
+
         <!-- 文章正文 -->
-        <div class="article-body-card">
+        <div class="glass-card rounded-2xl p-6 sm:p-8 lg:p-10">
           <div
             id="vditor-preview"
             class="vditor-preview markdown-content"
@@ -110,9 +117,9 @@
         </div>
 
         <!-- 互动操作栏：点赞/收藏 -->
-        <div class="interaction-bar">
+        <div class="glass-card rounded-2xl py-5 px-5 sm:px-10 flex items-center justify-center gap-16">
           <button
-            class="interaction-btn"
+            class="btn-interaction"
             :class="{ active: liked }"
             :disabled="likeLoading"
             @click="toggleLike"
@@ -123,7 +130,7 @@
             <span>{{ likeCount }}</span>
           </button>
           <button
-            class="interaction-btn"
+            class="btn-interaction"
             :class="{ active: favorited }"
             :disabled="favoriteLoading"
             @click="toggleFavorite"
@@ -136,7 +143,7 @@
         </div>
 
         <!-- 评论区 -->
-        <div class="comment-section-wrapper">
+        <div class="glass-card rounded-2xl p-6 sm:p-8">
           <CommentSection :article-id="articleId" />
         </div>
       </main>
@@ -153,10 +160,11 @@ import { useArticleStore } from '@/stores/article'
 import { useAuthStore } from '@/stores/auth'
 import { renderMarkdownWithVditor, convertTimestampsToLinks } from '@/utils/markdown'
 import { parseTimestamps } from '@/utils/timestampParser'
-import { likeApi, favoriteApi } from '@/utils/api'
+import { likeApi, favoriteApi, articleApi } from '@/utils/api'
 import VideoPlayer from '@/components/video/VideoPlayer.vue'
 import TimestampNav from '@/components/video/TimestampNav.vue'
 import CommentSection from '@/components/article/CommentSection.vue'
+import KnowledgeGraphPanel from '@/components/knowledge/KnowledgeGraphPanel.vue'
 import type { ArticleDetail, VideoMeta, Timestamp } from '@/types/article'
 
 const route = useRoute()
@@ -169,6 +177,7 @@ const mainRef = ref<HTMLElement | null>(null)
 const currentSec = ref(0)
 const renderedContent = ref('')
 const readingProgress = ref(0)
+const maxReadingProgress = ref(0)
 
 // 点赞/收藏
 const liked = ref(false)
@@ -246,7 +255,11 @@ function updateReadingProgress() {
   if (!el) return
   const scrollTop = window.scrollY
   const docHeight = document.documentElement.scrollHeight - window.innerHeight
-  readingProgress.value = docHeight > 0 ? Math.min(100, (scrollTop / docHeight) * 100) : 0
+  const current = docHeight > 0 ? Math.min(100, (scrollTop / docHeight) * 100) : 0
+  if (current > maxReadingProgress.value) {
+    maxReadingProgress.value = current
+  }
+  readingProgress.value = maxReadingProgress.value
 }
 
 onMounted(() => window.addEventListener('scroll', updateReadingProgress))
@@ -362,8 +375,17 @@ async function deleteArticle() {
       cancelButtonText: '取消',
       type: 'warning'
     })
+    await articleApi.delete(articleId.value)
     ElMessage.success('文章删除成功')
-    router.push(route.query.from === 'my-articles' ? '/my-articles' : '/articles')
+    store.detail = null
+    const from = route.query.from
+    if (from === 'my-articles') {
+      router.push('/my-articles')
+    } else if (from === 'reading-history') {
+      router.push('/reading-history')
+    } else {
+      router.push('/articles')
+    }
   } catch (error: any) {
     if (error !== 'cancel') ElMessage.error(error.message || '删除文章失败')
   }
@@ -409,8 +431,9 @@ onMounted(async () => {
 /* ===== 阅读进度条 ===== */
 .reading-progress-bar {
   position: fixed;
-  top: 0;
+  top: env(safe-area-inset-top, 0);
   left: 0;
+  right: 0;
   height: 3px;
   background: linear-gradient(90deg, var(--cursor-orange), color-mix(in srgb, var(--cursor-orange) 60%, transparent));
   z-index: 1000;
@@ -460,47 +483,11 @@ onMounted(async () => {
   padding: 0 2px;
 }
 
-.btn-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid var(--border-primary-fallback);
-  background: var(--surface-400, #fff);
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--cursor-dark);
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.btn-back:hover {
-  border-color: var(--cursor-orange);
-  color: var(--cursor-orange);
-  background: color-mix(in srgb, var(--cursor-orange) 6%, transparent);
-}
-
 .actions-right {
   display: flex;
   gap: 10px;
 }
 
-/* ===== 视频区域 ===== */
-.video-section {
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-}
-
-/* ===== 文章头部 ===== */
-.article-header {
-  background: var(--surface-400, #fff);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: 14px;
-  overflow: hidden;
-}
 
 .article-header-inner {
   padding: 28px 32px 32px;
@@ -593,7 +580,7 @@ onMounted(async () => {
 /* ===== AI 摘要 ===== */
 .ai-summary-card {
   display: flex;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--cursor-orange) 20%, transparent);
   background: linear-gradient(135deg, #fff9f5 0%, #fff 100%);
@@ -629,13 +616,6 @@ onMounted(async () => {
   color: var(--cursor-dark);
 }
 
-/* ===== 正文 ===== */
-.article-body-card {
-  background: var(--surface-400, #fff);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: 14px;
-  padding: 36px 40px;
-}
 
 .vditor-preview {
   padding: 0;
@@ -663,56 +643,6 @@ onMounted(async () => {
   padding: 0 2px;
 }
 
-/* ===== 互动操作栏 ===== */
-.interaction-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 20px 0;
-  border-top: 1px solid var(--border-primary-fallback);
-  margin-top: 16px;
-}
-
-.interaction-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 24px;
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: 999px;
-  background: var(--surface-400, #fff);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--border-strong);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.interaction-btn:hover {
-  border-color: var(--cursor-orange);
-  color: var(--cursor-orange);
-  background: color-mix(in srgb, var(--cursor-orange) 6%, transparent);
-}
-
-.interaction-btn.active {
-  border-color: var(--cursor-orange);
-  background: color-mix(in srgb, var(--cursor-orange) 8%, transparent);
-}
-
-.interaction-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.interaction-btn svg {
-  flex-shrink: 0;
-}
-
-/* ===== 评论区容器 ===== */
-.comment-section-wrapper {
-  padding-top: 8px;
-}
 
 /* ===== 响应式 ===== */
 @media (max-width: 1100px) {
@@ -743,10 +673,6 @@ onMounted(async () => {
 
   .article-title {
     font-size: 22px;
-  }
-
-  .article-body-card {
-    padding: 24px 20px;
   }
 
   .article-actions-bar {

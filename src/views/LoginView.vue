@@ -62,26 +62,26 @@ const goToRegister = () => {
 </script>
 
 <template>
-  <div class="cursor-login-container">
-    <section class="cursor-section">
-      <div class="cursor-container">
-        <div class="cursor-auth-card">
-          <div class="cursor-auth-header">
-            <h2 class="cursor-section-heading" style="text-align: center;">用户登录</h2>
-            <p class="cursor-body-secondary" style="text-align: center; margin-top: var(--space-12);">
-              欢迎回来，请登录您的账户
-            </p>
+  <div class="relative min-h-screen overflow-hidden">
+    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
+
+    <section class="relative z-10 py-20">
+      <div class="max-w-[440px] mx-auto px-6">
+        <div class="p-6 sm:p-10 glass-card rounded-2xl">
+          <div class="mb-10 text-center">
+            <h2 class="text-3xl font-bold text-slate-800 mb-2">用户登录</h2>
+            <p class="text-slate-500">欢迎回来，请登录您的账户</p>
           </div>
-          
+
           <el-form
             ref="formRef"
             :model="form"
             :rules="rules"
             label-width="0"
-            class="cursor-auth-form"
+            class="mb-8"
           >
-            <div class="cursor-form-group">
-              <label class="cursor-form-label">用户名</label>
+            <div class="mb-5">
+              <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">用户名</label>
               <el-input
                 v-model="form.username"
                 placeholder="请输入用户名"
@@ -89,9 +89,9 @@ const goToRegister = () => {
                 @keyup.enter="handleLogin"
               />
             </div>
-            
-            <div class="cursor-form-group">
-              <label class="cursor-form-label">密码</label>
+
+            <div class="mb-5">
+              <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">密码</label>
               <el-input
                 v-model="form.password"
                 type="password"
@@ -100,25 +100,28 @@ const goToRegister = () => {
                 @keyup.enter="handleLogin"
               />
             </div>
-            
-            <div class="cursor-form-actions">
+
+            <div class="mt-8">
               <button
                 type="button"
-                class="cursor-btn-primary"
+                class="btn-primary w-full"
                 :disabled="loading"
                 @click="handleLogin"
-                style="width: 100%;"
               >
                 <span v-if="!loading">登录</span>
                 <span v-else>登录中...</span>
               </button>
             </div>
           </el-form>
-          
-          <div class="cursor-auth-footer">
-            <span class="cursor-body-secondary">还没有账户？</span>
-            <button class="cursor-btn-pill" @click="goToRegister">
+
+          <div class="flex justify-center items-center gap-2 pt-6 border-t border-slate-200/50 text-center">
+            <span class="text-sm text-slate-500">还没有账户？</span>
+            <button class="btn-glass-pill min-h-8" @click="goToRegister">
               立即注册
+            </button>
+            <span class="text-slate-300">|</span>
+            <button class="btn-glass-pill min-h-8" @click="router.push('/forgot-password')">
+              忘记密码
             </button>
           </div>
         </div>
@@ -128,61 +131,5 @@ const goToRegister = () => {
 </template>
 
 <style scoped>
-.cursor-login-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-}
-
-.cursor-auth-card {
-  max-width: 400px;
-  margin: 0 auto;
-  padding: var(--space-60) 0;
-}
-
-.cursor-auth-header {
-  margin-bottom: var(--space-40);
-}
-
-.cursor-auth-form {
-  margin-bottom: var(--space-32);
-}
-
-.cursor-form-group {
-  margin-bottom: var(--space-24);
-}
-
-.cursor-form-label {
-  display: block;
-  font-family: var(--font-system);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--cursor-dark);
-  margin-bottom: var(--space-6);
-  text-align: left;
-}
-
-.cursor-form-actions {
-  margin-top: var(--space-32);
-}
-
-.cursor-auth-footer {
-  text-align: center;
-  padding-top: var(--space-24);
-  border-top: 1px solid var(--border-primary-fallback);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-/* 响应式设计 */
-@media (max-width: 600px) {
-  .cursor-auth-card {
-    padding: var(--space-40) 0;
-  }
-  
-  .cursor-auth-header {
-    margin-bottom: var(--space-32);
-  }
-}
+/* All styles applied via Tailwind utility classes in template */
 </style>

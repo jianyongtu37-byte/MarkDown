@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Mobile: prevent horizontal scroll */
+@media (width <= 767px) {
+  body {
+    overflow-x: hidden;
+  }
+}
+
+/* Avatar initials fallback (replaces DiceBear external service) */
+.avatar-initials {
+  --el-avatar-bg-color: var(--el-color-primary-light-3, #f97316);
+  color: #fff;
+  font-weight: 600;
+  font-size: inherit;
+  user-select: none;
+}
+.avatar-initials-large {
+  font-size: 2rem;
+}
+
+/* Reduced motion: remove backdrop blur for performance and comfort */
+@media (prefers-reduced-motion: reduce) {
+  .backdrop-blur-lg,
+  .backdrop-blur-xl,
+  .backdrop-blur-2xl,
+  .backdrop-blur-3xl {
+    backdrop-filter: none !important;
+    background-color: rgb(255 255 255 / 92%) !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

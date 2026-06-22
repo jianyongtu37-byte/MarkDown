@@ -94,108 +94,107 @@ const goToLogin = () => {
 </script>
 
 <template>
-  <div class="cursor-register-container">
-    <div class="cursor-section">
-      <div class="cursor-container">
-        <div class="cursor-register-hero">
-          <h1 class="cursor-display-hero">创建账户</h1>
-          <p class="cursor-body-secondary">加入我们的知识社区，开始记录和分享</p>
+  <div class="relative min-h-screen overflow-hidden">
+    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
+
+    <div class="relative z-10 py-16">
+      <div class="max-w-[720px] mx-auto px-6">
+        <!-- Hero -->
+        <div class="text-center mb-12 pt-16">
+          <h1 class="cursor-display-hero text-slate-800 mb-2">创建账户</h1>
+          <p class="text-slate-500">加入我们的知识社区，开始记录和分享</p>
         </div>
-        
-        <div class="cursor-register-card cursor-card">
-          <div class="cursor-register-form-wrapper">
-            <el-form
-              ref="formRef"
-              :model="form"
-              :rules="rules"
-              label-position="top"
-              class="cursor-register-form"
-            >
-              <div class="cursor-form-grid">
-                <el-form-item label="用户名" prop="username" class="cursor-form-item">
-                  <div class="cursor-form-label cursor-system-caption">用户名</div>
-                  <el-input
-                    v-model="form.username"
-                    placeholder="请输入用户名（3-20位中文、字母、数字、下划线）"
-                    clearable
-                    size="large"
-                  />
-                  <div class="cursor-form-hint cursor-caption">用于登录的唯一标识</div>
-                </el-form-item>
-                
-                <el-form-item label="密码" prop="password" class="cursor-form-item">
-                  <div class="cursor-form-label cursor-system-caption">密码</div>
-                  <el-input
-                    v-model="form.password"
-                    type="password"
-                    placeholder="请输入密码（6-20位）"
-                    show-password
-                    size="large"
-                  />
-                  <div class="cursor-form-hint cursor-caption">至少6个字符</div>
-                </el-form-item>
-                
-                <el-form-item label="确认密码" prop="confirmPassword" class="cursor-form-item">
-                  <div class="cursor-form-label cursor-system-caption">确认密码</div>
-                  <el-input
-                    v-model="form.confirmPassword"
-                    type="password"
-                    placeholder="请再次输入密码"
-                    show-password
-                    size="large"
-                    @keyup.enter="handleRegister"
-                  />
-                  <div class="cursor-form-hint cursor-caption">请再次输入密码以确认</div>
-                </el-form-item>
-                
-                <el-form-item label="昵称" prop="nickname" class="cursor-form-item">
-                  <div class="cursor-form-label cursor-system-caption">昵称</div>
-                  <el-input
-                    v-model="form.nickname"
-                    placeholder="请输入昵称"
-                    clearable
-                    size="large"
-                  />
-                  <div class="cursor-form-hint cursor-caption">在社区中显示的名称</div>
-                </el-form-item>
-                
-                <el-form-item label="邮箱" prop="email" class="cursor-form-item">
-                  <div class="cursor-form-label cursor-system-caption">邮箱</div>
-                  <el-input
-                    v-model="form.email"
-                    placeholder="请输入邮箱"
-                    clearable
-                    size="large"
-                  />
-                  <div class="cursor-form-hint cursor-caption">用于接收通知和找回密码</div>
-                </el-form-item>
-              </div>
-              
-              <div class="cursor-form-actions">
-                <button
-                  type="button"
-                  class="cursor-btn-primary cursor-register-button"
-                  :disabled="loading"
-                  @click="handleRegister"
-                >
-                  <span v-if="!loading">创建账户</span>
-                  <span v-else>创建中...</span>
-                </button>
-              </div>
-            </el-form>
-            
-            <div class="cursor-register-footer">
-              <div class="cursor-footer-divider">
-                <span class="cursor-divider-text cursor-caption">已有账户？</span>
-              </div>
-              <button 
+
+        <!-- Form card — glass -->
+        <div class="p-6 sm:p-10 mb-16 glass-card rounded-2xl">
+          <el-form
+            ref="formRef"
+            :model="form"
+            :rules="rules"
+            label-position="top"
+          >
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
+              <el-form-item label="用户名" prop="username" class="!mb-0">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">用户名</label>
+                <el-input
+                  v-model="form.username"
+                  placeholder="3-20位中文、字母、数字、下划线"
+                  clearable
+                  size="large"
+                />
+                <span class="block mt-1 text-xs text-slate-400">用于登录的唯一标识</span>
+              </el-form-item>
+
+              <el-form-item label="密码" prop="password" class="!mb-0">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">密码</label>
+                <el-input
+                  v-model="form.password"
+                  type="password"
+                  placeholder="6-20位"
+                  show-password
+                  size="large"
+                />
+                <span class="block mt-1 text-xs text-slate-400">至少6个字符</span>
+              </el-form-item>
+
+              <el-form-item label="确认密码" prop="confirmPassword" class="!mb-0">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">确认密码</label>
+                <el-input
+                  v-model="form.confirmPassword"
+                  type="password"
+                  placeholder="请再次输入密码"
+                  show-password
+                  size="large"
+                  @keyup.enter="handleRegister"
+                />
+                <span class="block mt-1 text-xs text-slate-400">请再次输入密码以确认</span>
+              </el-form-item>
+
+              <el-form-item label="昵称" prop="nickname" class="!mb-0">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">昵称</label>
+                <el-input
+                  v-model="form.nickname"
+                  placeholder="请输入昵称"
+                  clearable
+                  size="large"
+                />
+                <span class="block mt-1 text-xs text-slate-400">在社区中显示的名称</span>
+              </el-form-item>
+
+              <el-form-item label="邮箱" prop="email" class="col-span-full !mb-0">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">邮箱</label>
+                <el-input
+                  v-model="form.email"
+                  placeholder="请输入邮箱"
+                  clearable
+                  size="large"
+                />
+                <span class="block mt-1 text-xs text-slate-400">用于接收通知和找回密码</span>
+              </el-form-item>
+            </div>
+
+            <div class="text-center">
+              <button
                 type="button"
-                class="cursor-btn-pill cursor-login-link"
-                @click="goToLogin"
+                class="btn-primary px-8 w-full md:w-64"
+                :disabled="loading"
+                @click="handleRegister"
               >
-                立即登录
+                <span v-if="!loading">创建账户</span>
+                <span v-else>创建中...</span>
               </button>
             </div>
+          </el-form>
+
+          <div class="mt-10 pt-6 border-t border-slate-200/50 text-center">
+            <span class="text-sm text-slate-400">已有账户？</span>
+            <button
+              type="button"
+              class="btn-glass-pill min-h-8 ml-2"
+              @click="goToLogin"
+            >
+              立即登录
+            </button>
           </div>
         </div>
       </div>
@@ -204,141 +203,5 @@ const goToLogin = () => {
 </template>
 
 <style scoped>
-.cursor-register-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-}
-
-.cursor-register-hero {
-  text-align: center;
-  margin-bottom: var(--space-60);
-  padding-top: var(--space-80);
-}
-
-.cursor-register-hero h1 {
-  margin-bottom: var(--space-12);
-  color: var(--cursor-dark);
-}
-
-.cursor-register-hero p {
-  color: var(--border-strong);
-  text-align: center;
-}
-
-.cursor-register-card {
-  max-width: 680px;
-  margin: 0 auto var(--space-80);
-  padding: var(--space-48);
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: none;
-}
-
-.cursor-register-form-wrapper {
-  width: 100%;
-}
-
-.cursor-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-24);
-  margin-bottom: var(--space-40);
-}
-
-.cursor-form-item {
-  margin-bottom: 0;
-}
-
-.cursor-form-label {
-  margin-bottom: var(--space-8);
-  display: block;
-}
-
-.cursor-form-hint {
-  margin-top: var(--space-6);
-  color: var(--border-strong);
-}
-
-.cursor-form-actions {
-  margin-top: var(--space-40);
-  text-align: center;
-}
-
-.cursor-register-button {
-  width: 100%;
-  padding: var(--space-12) var(--space-24);
-  font-size: 14px;
-  font-weight: 400;
-  border-radius: var(--radius-comfortable);
-  transition: color 150ms ease, box-shadow 200ms ease;
-  cursor: pointer;
-}
-
-.cursor-register-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.cursor-register-footer {
-  margin-top: var(--space-40);
-  padding-top: var(--space-24);
-  border-top: 1px solid var(--border-primary-fallback);
-  text-align: center;
-}
-
-.cursor-footer-divider {
-  margin-bottom: var(--space-16);
-}
-
-.cursor-divider-text {
-  color: var(--border-strong);
-}
-
-.cursor-login-link {
-  font-size: 14px;
-  padding: 3px 8px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .cursor-form-grid {
-    grid-template-columns: 1fr;
-    gap: var(--space-20);
-  }
-  
-  .cursor-register-card {
-    padding: var(--space-24);
-    margin: 0 auto var(--space-40);
-  }
-  
-  .cursor-register-hero {
-    padding-top: var(--space-40);
-    margin-bottom: var(--space-40);
-  }
-  
-  .cursor-register-hero h1 {
-    font-size: 36px;
-    line-height: 1.20;
-    letter-spacing: -0.72px;
-  }
-  
-  .cursor-register-hero p {
-    font-size: 17.28px;
-  }
-}
-
-@media (max-width: 600px) {
-  .cursor-register-hero h1 {
-    font-size: 26px;
-    letter-spacing: -0.325px;
-  }
-  
-  .cursor-register-hero p {
-    font-size: 16px;
-  }
-  
-  .cursor-register-card {
-    padding: var(--space-20);
-  }
-}
+/* All styles applied via Tailwind utility classes in template */
 </style>

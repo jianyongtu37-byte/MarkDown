@@ -1,40 +1,41 @@
 <template>
-  <div class="cursor-favorites-container">
-    <div class="cursor-section">
-      <div class="cursor-container">
-        <div class="cursor-page-header">
-          <div class="header-left">
-            <h1 class="cursor-display-hero">我的收藏</h1>
-            <p class="subtitle cursor-body-secondary">管理您收藏的文章和收藏夹</p>
-          </div>
+  <div class="relative overflow-hidden">
+    <!-- Ambient blur decorations -->
+    <div class="absolute -top-24 -left-24 w-96 h-96 bg-indigo-200/30 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-24 -right-24 w-96 h-96 bg-amber-200/30 rounded-full blur-3xl pointer-events-none"></div>
 
-          <div class="header-right">
-            <el-button
-              type="primary"
-              size="large"
-              class="cursor-btn-primary"
-              @click="showCreateDialog = true"
-            >
-              <el-icon><FolderAdd /></el-icon>
-              新建收藏夹
-            </el-button>
-            <el-button
-              size="large"
-              class="cursor-btn-pill"
-              @click="refreshAll"
-            >
-              <el-icon><Refresh /></el-icon>
-              刷新
-            </el-button>
-          </div>
+    <div class="relative z-10 py-8 sm:py-16 max-w-[1200px] mx-auto px-4 sm:px-6">
+      <!-- Page header -->
+      <div class="flex justify-between items-start mb-6 sm:mb-8 pt-4 sm:pt-12">
+        <div>
+          <h1 class="cursor-display-hero text-slate-800 mb-2">我的收藏</h1>
+          <p class="text-slate-500">管理您收藏的文章和收藏夹</p>
         </div>
+        <div class="flex gap-2 sm:gap-3 items-center">
+          <button
+            class="btn-primary text-sm sm:text-base"
+            @click="showCreateDialog = true"
+          >
+            <el-icon><FolderAdd /></el-icon>
+            <span class="hidden sm:inline">新建收藏夹</span>
+            <span class="sm:hidden">新建</span>
+          </button>
+          <button
+            class="btn-glass-pill"
+            @click="refreshAll"
+          >
+            <el-icon><Refresh /></el-icon>
+          </button>
+        </div>
+      </div>
 
-        <!-- 收藏夹标签栏 -->
-        <div class="folder-tabs">
+      <!-- Folder tabs -- filter card with bg-white/75 prominence -->
+      <div class="glass-card rounded-2xl p-4 mb-6">
+        <div class="flex flex-wrap gap-2">
           <el-tag
             :type="selectedFolderId === null ? 'primary' : 'info'"
             :effect="selectedFolderId === null ? 'dark' : 'plain'"
-            class="folder-tag"
+            class="cursor-pointer select-none"
             @click="selectFolder(null)"
           >
             全部 ({{ totalArticleCount }})
@@ -42,24 +43,23 @@
           <div
             v-for="folder in folders"
             :key="folder.id"
-            class="folder-tag-wrapper"
-            @click="selectFolder(folder.id)"
+            class="relative inline-flex items-center group"
           >
             <el-tag
               :type="selectedFolderId === folder.id ? 'primary' : 'info'"
               :effect="selectedFolderId === folder.id ? 'dark' : 'plain'"
-              class="folder-tag"
               :closable="false"
+              class="cursor-pointer select-none"
+              @click="selectFolder(folder.id)"
             >
               <el-icon><Folder /></el-icon>
               {{ folder.name }}
-              <span class="folder-count">({{ folder.articleCount }})</span>
+              <span class="text-[0.85em] opacity-80">({{ folder.articleCount }})</span>
             </el-tag>
-            <!-- 收藏夹操作菜单 -->
-            <div class="folder-actions" @click.stop>
+            <div class="absolute -right-1 -top-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200" @click.stop>
               <el-dropdown trigger="click" @command="(cmd: string) => handleFolderAction(cmd, folder)">
                 <el-button
-                  class="folder-action-btn"
+                  class="btn-glass-pill min-h-7 min-w-7 p-0 rounded-full"
                   size="small"
                   circle
                   @click.stop
@@ -84,84 +84,69 @@
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- 文章列表 -->
-        <div class="cursor-articles-section">
-          <div class="cursor-articles-card cursor-card">
-            <!-- 加载状态 -->
-            <div v-if="loading" class="cursor-loading-state">
-              <el-skeleton :rows="5" animated />
-            </div>
+      <!-- Pull-to-refresh indicator -->
+      <div
+        class="flex items-center justify-center transition-all duration-200 overflow-hidden"
+        :style="{ height: pullDistance + 'px' }"
+      >
+        <span class="text-sm text-slate-400">{{ isPulling ? '释放刷新' : '下拉刷新' }}</span>
+      </div>
 
-            <!-- 文章列表 -->
-            <div v-else-if="articles.length > 0" class="cursor-articles-list">
+      <!-- Loading state -->
+      <div v-if="loading" class="glass-card rounded-2xl p-6 sm:p-10">
+        <el-skeleton :rows="5" animated />
+      </div>
+
+      <!-- Article list -->
+      <template v-else-if="articles.length > 0">
+        <div ref="listContainerRef" class="flex flex-col gap-6">
+          <SwipeDeleteItem
+            v-for="(article, index) in articles"
+            :key="article.id"
+            @delete="handleRemoveFavorite(article.id)"
+          >
+            <div
+              class="group glass-card rounded-2xl glass-card-hover hover:-translate-y-0.5 transition-all duration-200 p-4 sm:p-8 relative overflow-hidden"
+            >
+              <!-- Colored left accent strip -->
               <div
-                v-for="article in articles"
-                :key="article.id"
-                class="cursor-article-item cursor-card"
-              >
-                <div class="cursor-article-info">
-                  <div class="cursor-article-header">
-                    <h3
-                      class="cursor-article-title cursor-title-small"
-                      @click="viewArticle(article.id)"
-                    >
-                      {{ article.title }}
-                    </h3>
-                    <div class="cursor-article-meta">
-                      <span class="cursor-meta-item cursor-caption">
-                        <el-icon><User /></el-icon>
-                        {{ article.authorName || article.nickname || '未知用户' }}
-                      </span>
-                      <span class="cursor-meta-item cursor-caption">
-                        <el-icon><Clock /></el-icon>
-                        {{ formatTime(article.createdAt) }}
-                      </span>
-                      <span class="cursor-meta-item cursor-caption">
-                        <el-icon><View /></el-icon>
-                        {{ article.viewCount || 0 }} 次阅读
-                      </span>
-                    </div>
-                  </div>
+                class="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
+                :class="['bg-indigo-400','bg-blue-400','bg-emerald-400','bg-amber-400','bg-violet-400','bg-rose-400'][index % 6]"
+              ></div>
 
-                  <div class="cursor-article-content-preview">
-                    <p class="cursor-content-text cursor-body-secondary">
-                      {{ article.content?.substring(0, 150) || '无内容' }}{{ (article.content?.length || 0) > 150 ? '...' : '' }}
-                    </p>
-                  </div>
-
-                  <div
-                    v-if="article.tags && article.tags.length > 0"
-                    class="cursor-article-tags"
+              <div class="flex justify-between items-start gap-4 pl-1">
+                <div class="flex-1 min-w-0">
+                  <h3
+                    class="text-lg font-semibold text-slate-800 mb-1.5 group-hover:text-orange-600 transition-colors cursor-pointer truncate"
+                    @click="viewArticle(article.id)"
                   >
-                    <el-tag
-                      v-for="tag in article.tags"
-                      :key="tag.id"
-                      type="info"
-                      size="small"
-                      class="cursor-tag-item"
-                    >
-                      {{ tag.name }}
-                    </el-tag>
+                    {{ article.title }}
+                  </h3>
+                  <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-400">
+                    <span class="font-medium text-slate-500">{{ article.authorName || article.nickname || article.username || '未知用户' }}</span>
+                    <span class="text-slate-300 select-none">&middot;</span>
+                    <span>{{ formatTime(article.createTime || article.createdAt) }}</span>
+                    <span class="text-slate-300 select-none">&middot;</span>
+                    <span>{{ article.viewCount || 0 }} 次阅读</span>
+                    <template v-if="article.tags && article.tags.length > 0">
+                      <span class="text-slate-300 select-none">&middot;</span>
+                      <span class="text-indigo-500">{{ article.tags.map((t: any) => t.name).join(', ') }}</span>
+                    </template>
                   </div>
                 </div>
-
-                <div class="cursor-article-actions">
-                  <el-button
-                    type="primary"
+                <div class="flex flex-row sm:flex-col gap-2 sm:gap-3 items-center sm:items-end shrink-0">
+                  <button
                     @click="viewArticle(article.id)"
-                    class="cursor-btn-pill"
-                    size="large"
+                    class="btn-glass-pill text-xs"
                   >
                     <el-icon><View /></el-icon>
                     查看
-                  </el-button>
+                  </button>
                   <el-button
-                    type="danger"
-                    plain
                     @click="handleRemoveFavorite(article.id)"
-                    class="cursor-btn-pill"
-                    size="large"
+                    class="btn-glass-pill text-xs gap-1"
                     :loading="removingId === article.id"
                   >
                     <el-icon><StarFilled /></el-icon>
@@ -169,108 +154,116 @@
                   </el-button>
                 </div>
               </div>
-            </div>
 
-            <!-- 空状态 -->
-            <div v-else class="cursor-empty-state">
-              <el-empty :description="selectedFolderId ? '该收藏夹暂无文章' : '暂无收藏的文章'">
-                <el-button
-                  type="primary"
-                  @click="() => router.push('/articles')"
-                  class="cursor-btn-primary"
-                >
-                  去浏览文章
-                </el-button>
-              </el-empty>
+              <p class="mt-3.5 pl-1 text-sm text-slate-500 leading-relaxed">
+                {{ article.content?.substring(0, 150) || '无内容' }}{{ (article.content?.length || 0) > 150 ? '...' : '' }}
+              </p>
             </div>
-
-            <!-- 分页 -->
-            <div
-              v-if="articles.length > 0"
-              class="cursor-pagination-section"
-            >
-              <el-pagination
-                v-model:current-page="pageNum"
-                v-model:page-size="pageSize"
-                :total="total"
-                :page-sizes="[5, 10, 20, 50]"
-                layout="total, sizes, prev, pager, next, jumper"
-                @current-change="loadFavorites"
-                @size-change="() => { pageNum = 1; loadFavorites() }"
-              />
-            </div>
-          </div>
+          </SwipeDeleteItem>
         </div>
+
+        <!-- Pagination -->
+        <div class="flex justify-center py-6 mb-12">
+          <el-pagination
+            v-model:current-page="pageNum"
+            v-model:page-size="pageSize"
+            :total="total"
+            :page-sizes="[5, 10, 20, 50]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="loadFavorites"
+            @size-change="() => { pageNum = 1; loadFavorites() }"
+          />
+        </div>
+      </template>
+
+      <!-- Empty state -->
+      <div v-else class="py-20 text-center glass-card rounded-2xl">
+        <el-empty :description="selectedFolderId ? '该收藏夹暂无文章' : '暂无收藏的文章'">
+          <button
+            @click="() => router.push('/articles')"
+            class="btn-primary"
+          >
+            去浏览文章
+          </button>
+        </el-empty>
       </div>
     </div>
 
-    <!-- 创建收藏夹对话框 -->
+    <!-- Create folder: mobile drawer / desktop dialog -->
+    <el-drawer
+      v-if="isMobile"
+      v-model="showCreateDialog"
+      title="新建收藏夹"
+      direction="btt"
+      size="50%"
+      :show-close="true"
+    >
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="0">
+        <el-form-item prop="name">
+          <el-input v-model="createForm.name" placeholder="请输入收藏夹名称" maxlength="50" show-word-limit size="large" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="flex gap-3">
+          <button @click="showCreateDialog = false" class="btn-glass-pill flex-1">取消</button>
+          <el-button :loading="creating" @click="handleCreateFolder" class="btn-primary px-4 flex-1">创建</el-button>
+        </div>
+      </template>
+    </el-drawer>
     <el-dialog
+      v-else
       v-model="showCreateDialog"
       title="新建收藏夹"
       width="400px"
       :close-on-click-modal="false"
     >
-      <el-form
-        ref="createFormRef"
-        :model="createForm"
-        :rules="createRules"
-        label-width="0"
-      >
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="0">
         <el-form-item prop="name">
-          <el-input
-            v-model="createForm.name"
-            placeholder="请输入收藏夹名称"
-            maxlength="50"
-            show-word-limit
-            size="large"
-          />
+          <el-input v-model="createForm.name" placeholder="请输入收藏夹名称" maxlength="50" show-word-limit size="large" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="creating"
-          @click="handleCreateFolder"
-        >
-          创建
-        </el-button>
+        <button @click="showCreateDialog = false" class="btn-glass-pill">取消</button>
+        <el-button :loading="creating" @click="handleCreateFolder" class="btn-primary px-4">创建</el-button>
       </template>
     </el-dialog>
 
-    <!-- 重命名收藏夹对话框 -->
+    <!-- Rename folder: mobile drawer / desktop dialog -->
+    <el-drawer
+      v-if="isMobile"
+      v-model="showRenameDialog"
+      title="重命名收藏夹"
+      direction="btt"
+      size="50%"
+      :show-close="true"
+    >
+      <el-form ref="renameFormRef" :model="renameForm" :rules="renameRules" label-width="0">
+        <el-form-item prop="name">
+          <el-input v-model="renameForm.name" placeholder="请输入新的收藏夹名称" maxlength="50" show-word-limit size="large" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="flex gap-3">
+          <button @click="showRenameDialog = false" class="btn-glass-pill flex-1">取消</button>
+          <el-button :loading="renaming" @click="handleRenameFolder" class="btn-primary px-4 flex-1">确定</el-button>
+        </div>
+      </template>
+    </el-drawer>
     <el-dialog
+      v-else
       v-model="showRenameDialog"
       title="重命名收藏夹"
       width="400px"
       :close-on-click-modal="false"
     >
-      <el-form
-        ref="renameFormRef"
-        :model="renameForm"
-        :rules="renameRules"
-        label-width="0"
-      >
+      <el-form ref="renameFormRef" :model="renameForm" :rules="renameRules" label-width="0">
         <el-form-item prop="name">
-          <el-input
-            v-model="renameForm.name"
-            placeholder="请输入新的收藏夹名称"
-            maxlength="50"
-            show-word-limit
-            size="large"
-          />
+          <el-input v-model="renameForm.name" placeholder="请输入新的收藏夹名称" maxlength="50" show-word-limit size="large" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showRenameDialog = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="renaming"
-          @click="handleRenameFolder"
-        >
-          确定
-        </el-button>
+        <button @click="showRenameDialog = false" class="btn-glass-pill">取消</button>
+        <el-button :loading="renaming" @click="handleRenameFolder" class="btn-primary px-4">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -282,6 +275,9 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { favoriteApi } from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
+import { useLayout } from '@/composables/useLayout'
+import { useSwipeBack, usePullToRefresh } from '@/composables/useTouchGestures'
+import SwipeDeleteItem from '@/components/mobile/SwipeDeleteItem.vue'
 import {
   User, Clock, View, StarFilled, Refresh, Folder,
   FolderAdd, MoreFilled, Edit, Delete
@@ -291,6 +287,7 @@ import type { FavoriteFolderVO } from '@/types/favorites'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { isMobile } = useLayout()
 
 // 数据
 const articles = ref<ArticleVO[]>([])
@@ -354,7 +351,7 @@ const loadFavorites = async () => {
     }
     const result = await favoriteApi.list(params)
     if (result.data) {
-      articles.value = result.data.list || []
+      articles.value = result.data.records || []
       total.value = result.data.total || 0
     }
   } catch (error: any) {
@@ -382,10 +379,13 @@ const selectFolder = (folderId: number | null) => {
 }
 
 // 刷新全部
-const refreshAll = () => {
-  loadFolders()
-  loadFavorites()
+const refreshAll = async () => {
+  await Promise.all([loadFolders(), loadFavorites()])
 }
+
+useSwipeBack()
+const listContainerRef = ref<HTMLElement | null>(null)
+const { isPulling, pullDistance } = usePullToRefresh(listContainerRef, refreshAll)
 
 // 收藏夹操作
 const handleFolderAction = (cmd: string, folder: FavoriteFolderVO) => {
@@ -478,11 +478,7 @@ const handleRemoveFavorite = async (articleId: number) => {
 
 // 查看文章
 const viewArticle = (id: number) => {
-  const routeUrl = router.resolve({
-    path: `/articles/${id}`,
-    query: { from: 'favorites' }
-  })
-  window.open(routeUrl.href, '_blank')
+  router.push({ path: `/articles/${id}`, query: { from: 'favorites' } })
 }
 
 // 格式化时间
@@ -505,244 +501,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.cursor-favorites-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-}
-
-.cursor-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-32);
-  padding-top: var(--space-80);
-}
-
-.header-left h1 {
-  margin: 0 0 var(--space-8) 0;
-  color: var(--cursor-dark);
-  text-align: left;
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--border-strong);
-}
-
-.header-right {
-  display: flex;
-  gap: var(--space-12);
-  align-items: center;
-}
-
-/* 收藏夹标签 */
-.folder-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: var(--space-24);
-  padding: var(--space-16) var(--space-24);
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-}
-
-.folder-tag-wrapper {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.folder-tag {
-  cursor: pointer;
-  transition: all 0.2s;
-  user-select: none;
-}
-
-.folder-tag:hover {
-  transform: translateY(-1px);
-}
-
-.folder-count {
-  font-size: 0.85em;
-  opacity: 0.8;
-}
-
-.folder-actions {
-  position: absolute;
-  right: -4px;
-  top: -8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.folder-tag-wrapper:hover .folder-actions {
-  opacity: 1;
-}
-
-.folder-action-btn {
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  font-size: 12px;
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-}
-
-/* 文章列表样式 */
-.cursor-articles-section {
-  margin-bottom: var(--space-80);
-}
-
-.cursor-articles-card {
-  padding: var(--space-40);
-}
-
-.cursor-loading-state {
-  padding: var(--space-40);
-  text-align: center;
-}
-
-.cursor-articles-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-24);
-}
-
-.cursor-article-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: var(--space-32);
-  transition: transform 200ms ease, box-shadow 200ms ease;
-  border: 1px solid var(--border-primary-fallback);
-  background: var(--surface-400);
-}
-
-.cursor-article-item:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-card);
-}
-
-.cursor-article-info {
-  flex: 1;
-  margin-right: var(--space-24);
-}
-
-.cursor-article-header {
-  margin-bottom: var(--space-16);
-}
-
-.cursor-article-title {
-  margin: 0 0 var(--space-12) 0;
-  cursor: pointer;
-  transition: color 150ms ease;
-  color: var(--cursor-dark);
-  text-align: left;
-}
-
-.cursor-article-title:hover {
-  color: var(--cursor-orange);
-}
-
-.cursor-article-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-24);
-}
-
-.cursor-meta-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  color: var(--border-strong);
-}
-
-.cursor-article-content-preview {
-  margin-bottom: var(--space-16);
-}
-
-.cursor-content-text {
-  margin: 0;
-  color: var(--border-strong);
-  line-height: 1.6;
-}
-
-.cursor-article-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-.cursor-tag-item {
-  cursor: default;
-  font-family: var(--font-system);
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: var(--radius-pill) !important;
-  padding: 3px 8px !important;
-}
-
-.cursor-article-actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-12);
-  align-items: flex-end;
-  min-width: auto;
-}
-
-.cursor-empty-state {
-  padding: var(--space-80) 0;
-  text-align: center;
-}
-
-.cursor-pagination-section {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-32) 0 var(--space-16) 0;
-  border-top: 1px solid var(--border-primary-fallback);
-  margin-top: var(--space-24);
-}
-
-/* 响应式 */
-@media (max-width: 768px) {
-  .cursor-page-header {
-    flex-direction: column;
-    gap: var(--space-16);
-    padding-top: var(--space-40);
-  }
-
-  .header-left h1 {
-    font-size: 36px;
-  }
-
-  .header-right {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .cursor-article-item {
-    flex-direction: column;
-    gap: var(--space-20);
-  }
-
-  .cursor-article-info {
-    margin-right: 0;
-  }
-
-  .cursor-article-meta {
-    flex-direction: column;
-    gap: var(--space-12);
-  }
-
-  .cursor-article-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-    width: 100%;
-  }
-
-  .cursor-articles-card {
-    padding: var(--space-24);
-  }
-}
+/* All styles applied via Tailwind utility classes in template */
 </style>

@@ -4,7 +4,7 @@
       <el-button
         circle
         size="small"
-        class="bell-btn"
+        class="btn-glass-pill min-h-7 min-w-7 p-0 rounded-full"
         @click="togglePanel"
       >
         <el-icon :size="18"><Bell /></el-icon>
@@ -13,13 +13,12 @@
 
     <!-- 通知面板 -->
     <Transition name="notif-fade">
-      <div v-if="showPanel" class="notification-panel">
+      <div v-if="showPanel" class="notification-panel glass-card rounded-2xl" style="box-shadow: 0 8px 30px rgba(0,0,0,0.12);">
         <div class="panel-header">
           <span class="panel-title">通知</span>
           <div class="panel-header-actions">
             <el-button
               v-if="unreadCount > 0"
-              type="primary"
               link
               size="small"
               @click="markAllRead"
@@ -27,7 +26,6 @@
               全部已读
             </el-button>
             <el-button
-              type="info"
               link
               size="small"
               @click="showPanel = false"
@@ -99,7 +97,6 @@
             <el-button
               v-if="!allLoaded"
               link
-              type="primary"
               size="small"
               :loading="loadingMore"
               @click="loadAllNotifications"
@@ -136,6 +133,8 @@ const readNotifications = ref<NotificationVO[]>([])
 const allLoaded = ref(false)
 const bellRef = ref<HTMLElement | null>(null)
 const abortController = ref<AbortController | null>(null)
+const sseRetryCount = ref(0)
+const MAX_SSE_RETRIES = 3
 
 const allNotifications = computed(() => [...unreadNotifications.value, ...readNotifications.value])
 
@@ -146,6 +145,13 @@ const startSseConnection = () => {
 
   const token = localStorage.getItem('token')
   if (!token) return
+
+  // 如果已经连续失败太多次，直接降级为轮询
+  if (sseRetryCount.value >= MAX_SSE_RETRIES) {
+    console.warn('SSE 连续失败已达上限，降级为轮询模式')
+    startPollingFallback()
+    return
+  }
 
   abortController.value = new AbortController()
 
@@ -159,6 +165,8 @@ const startSseConnection = () => {
     signal: abortController.value.signal,
     // 收到消息时更新未读数量
     onmessage: (event) => {
+      // 连接成功后重置重试计数
+      sseRetryCount.value = 0
       try {
         const data = JSON.parse(event.data)
         // 如果后端推送了新的通知，更新未读数量
@@ -180,17 +188,27 @@ const startSseConnection = () => {
       }
     },
     onerror: (err) => {
-      console.error('SSE 连接错误，3秒后重试:', err)
+      sseRetryCount.value++
+      console.error(`SSE 连接错误（${sseRetryCount.value}/${MAX_SSE_RETRIES}），3秒后重试:`, err)
+      // 连续失败超过上限，放弃 SSE 改用轮询
+      if (sseRetryCount.value >= MAX_SSE_RETRIES) {
+        console.warn('SSE 连续失败已达上限，降级为轮询模式')
+        closeSseConnection()
+        startPollingFallback()
+        return // 不返回数字，不再重试
+      }
       // 返回重试间隔（毫秒）
       return 3000
     },
     onclose: () => {
-      // 连接关闭后 5 秒重连
-      setTimeout(() => {
-        if (abortController.value) {
-          startSseConnection()
-        }
-      }, 5000)
+      // 连接意外关闭，如果还有重试次数则重连
+      if (sseRetryCount.value < MAX_SSE_RETRIES) {
+        setTimeout(() => {
+          if (abortController.value) {
+            startSseConnection()
+          }
+        }, 5000)
+      }
     },
   }).catch(() => {
     // SSE 连接失败（后端可能不支持），降级为轮询
@@ -371,18 +389,6 @@ const formatTime = (time?: string) => {
   display: inline-block;
 }
 
-.bell-btn {
-  border: none;
-  background: transparent;
-  color: var(--border-strong);
-  transition: color 0.2s;
-}
-
-.bell-btn:hover {
-  color: var(--cursor-orange);
-  background: color-mix(in srgb, var(--cursor-orange) 8%, transparent);
-}
-
 .notification-badge {
   line-height: 1;
 }
@@ -392,16 +398,12 @@ const formatTime = (time?: string) => {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 380px;
+  width: calc(100vw - 32px);
+  max-width: 380px;
   max-height: 480px;
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
   z-index: 2000;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .panel-header {

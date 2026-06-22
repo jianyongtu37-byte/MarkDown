@@ -4,12 +4,52 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { articleApi } from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
+import { useSwipeBack, usePullToRefresh } from '@/composables/useTouchGestures'
+import { createLongPressHandlers } from '@/composables/useLongPress'
+import MobileContextMenu from '@/components/mobile/MobileContextMenu.vue'
 import type { ArticleVO, ArticleQueryParams, ArticleListResult, ArticlePageResult } from '@/types/article'
-import { Plus, Search, Refresh, Clock, View, Edit, Delete, MagicStick, Check, User, Lock, Loading, Folder, Download } from '@element-plus/icons-vue'
+import { Plus, Search, Refresh, Clock, View, Edit, Delete, MagicStick, Check, User, Lock, Loading, Folder, Download, Upload } from '@element-plus/icons-vue'
 import { exportApi } from '@/utils/api'
+import ArticleImportDialog from '@/components/article/ArticleImportDialog.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+
+// Touch gestures
+useSwipeBack()
+const listContainerRef = ref<HTMLElement | null>(null)
+const { pullDistance } = usePullToRefresh(listContainerRef, async () => {
+  pageNum.value = 1
+  await loadMyArticles()
+})
+
+// Context menu
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuArticle = ref<ArticleVO | null>(null)
+
+function showContextMenu(article: ArticleVO, e: TouchEvent) {
+  const touch = e.touches[0]
+  if (!touch) return
+  contextMenuX.value = touch.clientX
+  contextMenuY.value = touch.clientY
+  contextMenuArticle.value = article
+  contextMenuVisible.value = true
+}
+
+const contextMenuActions = computed(() => {
+  if (!contextMenuArticle.value) return []
+  return [
+    { label: '查看文章', handler: () => viewArticleDetail(contextMenuArticle.value!.id) },
+    { label: '编辑文章', handler: () => editArticle(contextMenuArticle.value!.id) },
+    { label: '复制链接', handler: () => {
+      navigator.clipboard.writeText(`${window.location.origin}/articles/${contextMenuArticle.value!.id}`)
+      ElMessage.success('链接已复制')
+    }},
+    { label: '删除文章', danger: true, handler: () => deleteArticle(contextMenuArticle.value!.id, contextMenuArticle.value!.title) },
+  ]
+})
 
 // 数据
 const articles = ref<ArticleVO[]>([])
@@ -34,10 +74,10 @@ const user = computed(() => authStore.user)
   // 加载我的文章列表
   const loadMyArticles = async () => {
     if (!user.value) return
-    
+
     try {
       loading.value = true
-      
+
       // 构建查询参数 - 个人文章页面显示用户的所有文章（包括公开和私密）
       const params: ArticleQueryParams = {
         ...searchParams.value,
@@ -45,14 +85,14 @@ const user = computed(() => authStore.user)
         pageSize: pageSize.value,
         // 不添加 isPublic 参数，这样后端会返回用户的所有文章
       }
-      
+
       const result = await articleApi.listMy(params)
-      
+
       if (result.data) {
-        // result.data 是 ArticlePageResult 对象，包含 list 和 total
+        // result.data 是 ArticlePageResult 对象，包含 records 和 total
         // 使用双重断言，因为类型定义与实际返回结构不完全一致
         const data = result.data as unknown as ArticlePageResult | undefined
-        articles.value = data?.list || []
+        articles.value = data?.records || []
         total.value = data?.total || 0
       }
     } catch (error: any) {
@@ -82,9 +122,9 @@ const resetSearch = () => {
 
 // 查看文章详情
 const viewArticleDetail = (id: number) => {
-  router.push({ 
-    path: `/articles/${id}`, 
-    query: { from: 'my-articles' } 
+  router.push({
+    path: `/articles/${id}`,
+    query: { from: 'my-articles' }
   })
 }
 
@@ -101,9 +141,12 @@ const deleteArticle = async (id: number, title: string) => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     await articleApi.delete(id)
     ElMessage.success('文章删除成功')
+    // 乐观更新：先从本地列表移除，再请求后端同步
+    articles.value = articles.value.filter(a => a.id !== id)
+    total.value = Math.max(0, total.value - 1)
     loadMyArticles()
   } catch (error: any) {
     if (error !== 'cancel') {
@@ -127,21 +170,21 @@ const formatTime = (time?: string) => {
 const getStatusTagType = (article: any) => {
   // 更稳健的状态获取逻辑
   let status: number | undefined = undefined
-  
+
   // 首先尝试从 status 字段获取
   if (article.status !== undefined && article.status !== null) {
     status = Number(article.status)
-  } 
+  }
   // 如果 status 字段不存在或无效，尝试从 isPublic 字段推断
   else if (article.isPublic !== undefined && article.isPublic !== null) {
     status = article.isPublic === 1 ? 2 : 1
   }
-  
+
   // 根据状态值返回对应的标签类型
   if (status === 2) return 'success'    // 公开
   if (status === 1) return 'info'       // 私密
   if (status === 0) return 'warning'    // 草稿
-  
+
   // 默认返回 warning（草稿或未知状态）
   return 'warning'
 }
@@ -150,21 +193,21 @@ const getStatusTagType = (article: any) => {
 const getStatusText = (article: any) => {
   // 更稳健的状态获取逻辑
   let status: number | undefined = undefined
-  
+
   // 首先尝试从 status 字段获取
   if (article.status !== undefined && article.status !== null) {
     status = Number(article.status)
-  } 
+  }
   // 如果 status 字段不存在或无效，尝试从 isPublic 字段推断
   else if (article.isPublic !== undefined && article.isPublic !== null) {
     status = article.isPublic === 1 ? 2 : 1
   }
-  
+
   // 根据状态值返回对应的文本
   if (status === 2) return '公开'
   if (status === 1) return '私密'
   if (status === 0) return '草稿'
-  
+
   // 记录未知状态以便调试
   console.warn('未知文章状态:', article)
   return '未知'
@@ -233,6 +276,17 @@ const exportAllMarkdown = async () => {
   }
 }
 
+// 导入对话框
+const importDialogRef = ref<InstanceType<typeof ArticleImportDialog>>()
+
+const openImportDialog = () => {
+  importDialogRef.value?.open()
+}
+
+const handleImportSuccess = (ids: number[]) => {
+  loadMyArticles()
+}
+
 // 组件挂载时加载数据
 onMounted(async () => {
   // 检查登录状态
@@ -244,559 +298,273 @@ onMounted(async () => {
       return
     }
   }
-  
+
   loadMyArticles()
 })
 </script>
 
 <template>
-  <div class="cursor-my-articles-container">
-    <!-- 页面标题和操作 -->
-    <div class="cursor-section">
-      <div class="cursor-container">
-        <div class="cursor-page-header">
-          <div class="header-left">
-            <h1 class="cursor-display-hero">我的文章</h1>
-            <p class="subtitle cursor-body-secondary">管理您创建的所有文章</p>
+  <div class="relative overflow-hidden">
+    <!-- Ambient blob -->
+    <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
+
+    <div class="relative z-10 py-16">
+      <div class="max-w-[1200px] mx-auto px-6">
+        <!-- Header -->
+        <div class="flex justify-between items-start mb-8 pt-12">
+          <div>
+            <h1 class="cursor-display-hero text-slate-800 mb-2">我的文章</h1>
+            <p class="text-slate-500">管理您创建的所有文章</p>
           </div>
-          
-          <div class="header-right">
-            <el-button 
-              @click="() => router.push('/categories')" 
-              size="large"
-              plain
-              class="cursor-btn-pill"
-            >
-              <el-icon><Folder /></el-icon>
-              分类管理
-            </el-button>
-            <el-button 
-              type="primary"
-              plain
-              size="large"
-              :loading="exportingAll"
-              @click="exportAllMarkdown"
-              class="cursor-btn-pill"
-            >
-              <el-icon><Download /></el-icon>
-              导出全部
-            </el-button>
-            <el-button 
-              type="primary" 
-              @click="createNewArticle" 
-              class="cursor-btn-primary"
-              size="large"
-            >
-              <el-icon><Plus /></el-icon>
-              新建文章
-            </el-button>
+          <div class="flex items-center gap-2 flex-wrap justify-end">
+            <button @click="() => router.push('/categories')" class="btn-glass-pill">
+              <el-icon><Folder /></el-icon>分类管理
+            </button>
+            <button @click="openImportDialog" class="btn-import">
+              <el-icon><Upload /></el-icon>导入文章
+            </button>
+            <button :disabled="exportingAll" @click="exportAllMarkdown" class="btn-primary">
+              <el-icon><Download /></el-icon>导出全部
+            </button>
+            <button @click="createNewArticle" class="btn-primary">
+              <el-icon><Plus /></el-icon>新建文章
+            </button>
           </div>
         </div>
-        
-        <!-- 搜索区域 -->
-        <div class="cursor-search-section">
-          <div class="cursor-search-card cursor-card">
-            <div class="cursor-search-form">
-              <el-input
-                v-model="searchParams.keyword"
-                placeholder="搜索文章标题或内容"
-                clearable
-                @keyup.enter="searchArticles"
-                @clear="searchArticles"
-                size="large"
+
+        <!-- Search area -->
+        <div class="p-6 mb-8 glass-card rounded-2xl">
+          <div class="flex flex-wrap gap-4 items-end">
+            <el-input
+              v-model="searchParams.keyword"
+              placeholder="搜索文章标题或内容"
+              clearable
+              @keyup.enter="searchArticles"
+              @clear="searchArticles"
+              size="large"
+              class="flex-1 min-w-[200px]"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <el-button-group size="large">
+                <el-button
+                  :class="searchParams.status === undefined ? 'btn-glass-pill-active' : 'btn-glass-pill'"
+                  class="min-h-11 px-5 py-3 text-base"
+                  @click="filterByStatus(undefined)"
+                >
+                  全部
+                </el-button>
+                <el-button
+                  :class="searchParams.status === 0 ? 'btn-glass-pill-active' : 'btn-glass-pill'"
+                  class="min-h-11 px-5 py-3 text-base"
+                  @click="filterByStatus(0)"
+                >
+                  <el-icon><Edit /></el-icon>
+                  草稿
+                </el-button>
+                <el-button
+                  :class="searchParams.status === 1 ? 'btn-glass-pill-active' : 'btn-glass-pill'"
+                  class="min-h-11 px-5 py-3 text-base"
+                  @click="filterByStatus(1)"
+                >
+                  <el-icon><Lock /></el-icon>
+                  私密
+                </el-button>
+                <el-button
+                  :class="searchParams.status === 2 ? 'btn-glass-pill-active' : 'btn-glass-pill'"
+                  class="min-h-11 px-5 py-3 text-base"
+                  @click="filterByStatus(2)"
+                >
+                  <el-icon><Check /></el-icon>
+                  公开
+                </el-button>
+              </el-button-group>
+
+              <button
+                @click="searchArticles"
+                class="btn-glass-pill"
               >
-                <template #prefix>
-                  <el-icon><Search /></el-icon>
-                </template>
-              </el-input>
-              
-              <div class="cursor-search-actions">
-                <div class="cursor-status-filter">
-                  <el-button-group size="large">
-                    <el-button
-                      :type="searchParams.status === undefined ? 'primary' : ''"
-                      @click="filterByStatus(undefined)"
-                    >
-                      全部
-                    </el-button>
-                    <el-button
-                      :type="searchParams.status === 0 ? 'primary' : ''"
-                      @click="filterByStatus(0)"
-                    >
-                      <el-icon><Edit /></el-icon>
-                      草稿
-                    </el-button>
-                    <el-button
-                      :type="searchParams.status === 1 ? 'primary' : ''"
-                      @click="filterByStatus(1)"
-                    >
-                      <el-icon><Lock /></el-icon>
-                      私密
-                    </el-button>
-                    <el-button
-                      :type="searchParams.status === 2 ? 'primary' : ''"
-                      @click="filterByStatus(2)"
-                    >
-                      <el-icon><Check /></el-icon>
-                      公开
-                    </el-button>
-                  </el-button-group>
-                </div>
-                
-                <el-button 
-                  type="primary" 
-                  @click="searchArticles"
-                  class="cursor-btn-primary"
-                >
-                  <el-icon><Search /></el-icon>
-                  搜索
-                </el-button>
-                
-                <el-button 
-                  @click="resetSearch"
-                  class="cursor-btn-pill"
-                >
-                  <el-icon><Refresh /></el-icon>
-                  重置
-                </el-button>
-              </div>
+                <el-icon><Search /></el-icon>
+                搜索
+              </button>
+
+              <button
+                @click="resetSearch"
+                class="btn-glass-pill"
+              >
+                <el-icon><Refresh /></el-icon>
+                重置
+              </button>
             </div>
           </div>
         </div>
-        
-        <!-- 文章列表 -->
-        <div class="cursor-articles-section">
-          <div class="cursor-articles-card cursor-card">
-            <!-- 加载状态 -->
-            <div v-if="loading" class="cursor-loading-state">
-              <el-skeleton :rows="5" animated />
-            </div>
-            
-            <!-- 文章列表 -->
-            <div v-else-if="articles.length > 0" class="cursor-articles-list">
-              <div v-for="article in articles" :key="article.id" class="cursor-article-item cursor-card">
-                <div class="cursor-article-info">
-                  <div class="cursor-article-header">
-                    <h3 class="cursor-article-title cursor-title-small" @click="viewArticleDetail(article.id)">
-                      {{ article.title }}
-                    </h3>
-                    
-                    <div class="cursor-article-meta">
-                      <div class="cursor-meta-left">
-                        <span class="cursor-meta-item cursor-caption">
-                          <el-icon><Clock /></el-icon>
-                          <span class="cursor-meta-text">创建:{{ formatTime(article.createdAt) }}</span>
-                        </span>
-                        
-                        <span class="cursor-meta-item cursor-caption">
-                          <el-icon><Clock /></el-icon>
-                          <span class="cursor-meta-text">更新:{{ formatTime(article.updatedAt) }}</span>
-                        </span>
-                        
-                        <span class="cursor-meta-item cursor-caption">
-                          <el-icon><View /></el-icon>
-                          <span class="cursor-meta-text">阅读:{{ article.viewCount || 0 }} 次</span>
-                        </span>
-                        
-                        <span class="cursor-meta-item cursor-caption">
-                          <el-icon><User /></el-icon>
-                          <span class="cursor-meta-text">作者:{{ article.authorName || article.nickname || '未知' }}</span>
-                        </span>
-                      </div>
-                      
-                      <div class="cursor-meta-right">
-                        <el-tag :type="getStatusTagType(article)" size="small" class="cursor-status-tag">
-                          {{ getStatusText(article) }}
-                        </el-tag>
-                        
-                        <el-tag v-if="article.aiStatus === 2" type="primary" size="small" class="cursor-ai-tag">
-                          <el-icon><MagicStick /></el-icon>
-                          AI摘要
-                        </el-tag>
-                        <el-tag v-else-if="article.aiStatus === 1" type="warning" size="small" class="cursor-ai-tag">
-                          <el-icon><Loading /></el-icon>
-                          AI生成中...
-                        </el-tag>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div class="cursor-article-content-preview">
-                    <p class="cursor-content-text cursor-body-secondary">
-                      {{ article.content.substring(0, 150) }}{{ article.content.length > 150 ? '...' : '' }}
-                    </p>
-                  </div>
-                  
-                  <div class="cursor-article-tags" v-if="article.tags && article.tags.length > 0">
-                    <el-tag
-                      v-for="tag in article.tags"
-                      :key="tag.id"
-                      type="info"
-                      size="small"
-                      class="cursor-tag-item"
-                    >
-                      {{ tag.name }}
-                    </el-tag>
+
+        <!-- Loading state -->
+        <div v-if="loading" class="p-6 mb-8 text-center glass-card rounded-2xl">
+          <el-skeleton :rows="5" animated />
+        </div>
+
+        <!-- Empty state -->
+        <div v-else-if="articles.length === 0" class="py-16 mb-8 text-center glass-card rounded-2xl">
+          <el-empty description="暂无文章">
+            <button
+              @click="createNewArticle"
+              class="btn-primary"
+            >
+              创建第一篇文章
+            </button>
+          </el-empty>
+        </div>
+
+        <!-- Pull to refresh indicator -->
+        <div v-if="pullDistance > 0" :style="{ height: pullDistance + 'px' }" class="flex items-center justify-center">
+          <div class="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+
+        <!-- Article list -->
+        <div v-else ref="listContainerRef" class="flex flex-col gap-3.5 mb-16">
+          <div
+            v-for="(article, idx) in articles"
+            :key="article.id"
+            class="group p-6 glass-card rounded-2xl glass-card-hover hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden"
+            v-bind="createLongPressHandlers((e) => showContextMenu(article, e)).handlers"
+          >
+            <!-- Colored left accent strip, cycling through colors -->
+            <div
+              class="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
+              :class="['bg-indigo-400','bg-blue-400','bg-emerald-400','bg-amber-400','bg-violet-400','bg-rose-400'][idx % 6]"
+            ></div>
+
+            <div class="pl-1">
+              <!-- Title row with status tags and action buttons -->
+              <div class="flex justify-between items-start gap-4">
+                <div class="flex-1 min-w-0">
+                  <h3
+                    class="text-lg font-semibold text-slate-800 mb-1.5 group-hover:text-orange-600 transition-colors cursor-pointer truncate"
+                    @click="viewArticleDetail(article.id)"
+                  >
+                    {{ article.title }}
+                  </h3>
+
+                  <!-- Metadata row -->
+                  <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-400">
+                    <span class="font-medium text-slate-500">{{ article.authorName || article.nickname || article.username || '未知' }}</span>
+                    <span class="text-slate-300 select-none">·</span>
+                    <span>创建: {{ formatTime(article.createTime || article.createdAt) }}</span>
+                    <span class="text-slate-300 select-none">·</span>
+                    <span>更新: {{ formatTime(article.updateTime || article.updatedAt) }}</span>
+                    <span class="text-slate-300 select-none">·</span>
+                    <span>{{ article.viewCount || 0 }} 次阅读</span>
                   </div>
                 </div>
-                
-                <div class="cursor-article-actions">
-                  <el-button 
-                    type="primary" 
+
+                <!-- Status tags & action buttons (right side) -->
+                <div class="flex-shrink-0 flex items-center gap-2" @click.stop>
+                  <el-tag :type="getStatusTagType(article)" size="small" effect="plain">
+                    {{ getStatusText(article) }}
+                  </el-tag>
+                  <el-tag v-if="article.aiStatus === 2" size="small" effect="plain" type="primary" class="inline-flex items-center gap-1">
+                    <el-icon class="text-xs"><MagicStick /></el-icon>
+                    AI
+                  </el-tag>
+                  <el-tag v-else-if="article.aiStatus === 1" size="small" effect="plain" type="warning" class="inline-flex items-center gap-1">
+                    <el-icon class="text-xs"><Loading /></el-icon>
+                    AI生成中...
+                  </el-tag>
+
+                  <el-button
                     @click="viewArticleDetail(article.id)"
-                    class="cursor-btn-pill"
-                    size="large"
+                    class="btn-glass-pill text-xs gap-1"
                   >
-                    <el-icon><View /></el-icon>
                     查看
                   </el-button>
-                  
-                  <el-button 
-                    type="warning" 
-                    plain
+                  <el-button
                     @click="editArticle(article.id)"
-                    class="cursor-btn-pill"
-                    size="large"
+                    class="btn-glass-pill text-xs gap-1"
                   >
-                    <el-icon><Edit /></el-icon>
                     编辑
                   </el-button>
-                  
-                  <el-button 
-                    type="danger" 
-                    plain
+                  <el-button
                     @click="deleteArticle(article.id, article.title)"
-                    class="cursor-btn-pill"
-                    size="large"
+                    class="btn-glass-pill text-xs gap-1"
                   >
-                    <el-icon><Delete /></el-icon>
                     删除
                   </el-button>
                 </div>
               </div>
-            </div>
-            
-            <!-- 空状态 -->
-            <div v-else class="cursor-empty-state">
-              <el-empty description="暂无文章">
-                <el-button 
-                  type="primary" 
-                  @click="createNewArticle"
-                  class="cursor-btn-primary"
+
+              <!-- Content preview -->
+              <p class="mt-3.5 text-sm text-slate-500 leading-relaxed line-clamp-2">
+                {{ article.content?.substring(0, 200) || '无内容' }}{{ article.content && article.content.length > 200 ? '...' : '' }}
+              </p>
+
+              <!-- Tags row -->
+              <div v-if="article.tags && article.tags.length > 0" class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-200/40">
+                <el-tag
+                  v-for="tag in article.tags"
+                  :key="tag.id"
+                  size="small"
+                  effect="plain"
+                  type="info"
                 >
-                  创建第一篇文章
-                </el-button>
-              </el-empty>
-            </div>
-            
-            <!-- 分页 -->
-            <div v-if="articles.length > 0" class="cursor-pagination-section">
-              <el-pagination
-                v-model:current-page="pageNum"
-                v-model:page-size="pageSize"
-                :total="total"
-                :page-sizes="[5, 10, 20, 50]"
-                layout="total, sizes, prev, pager, next, jumper"
-                @current-change="handlePageChange"
-                @size-change="handleSizeChange"
-              />
+                  {{ tag.name }}
+                </el-tag>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- Pagination -->
+        <div v-if="articles.length > 0" class="flex justify-center py-6 mb-12">
+          <el-pagination
+            v-model:current-page="pageNum"
+            v-model:page-size="pageSize"
+            :total="total"
+            :page-sizes="[5, 10, 20, 50]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="handlePageChange"
+            @size-change="handleSizeChange"
+          />
+        </div>
       </div>
     </div>
+
+    <!-- 导入对话框 -->
+    <ArticleImportDialog ref="importDialogRef" @success="handleImportSuccess" />
+
+    <!-- Context Menu -->
+    <MobileContextMenu
+      :visible="contextMenuVisible"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :actions="contextMenuActions"
+      @close="contextMenuVisible = false"
+    />
   </div>
 </template>
 
 <style scoped>
-.cursor-my-articles-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-}
-
-.cursor-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-40);
-  padding-top: var(--space-80);
-}
-
-.cursor-page-header h1 {
-  text-align: left;
-  margin-bottom: var(--space-8);
-}
-
-.header-left h1 {
-  margin: 0 0 var(--space-8) 0;
-  color: var(--cursor-dark);
-  text-align: left;
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--border-strong);
-}
-
-.cursor-search-section {
-  margin-bottom: var(--space-40);
-}
-
-.cursor-search-card {
-  padding: var(--space-24);
-}
-
-.cursor-search-form {
-  display: flex;
-  gap: var(--space-16);
+.btn-import {
+  display: inline-flex;
   align-items: center;
-}
-
-.cursor-search-form .el-input {
-  flex: 1;
-}
-
-.cursor-search-actions {
-  display: flex;
-  gap: var(--space-12);
-  align-items: center;
-}
-
-.cursor-status-filter {
-  display: flex;
-}
-
-.cursor-status-filter .el-button-group {
-  display: flex;
-  border-radius: var(--radius-pill, 999px);
-  overflow: hidden;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-}
-
-.cursor-status-filter .el-button-group .el-button {
-  border-radius: 0 !important;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cursor-status-filter .el-button-group .el-button.el-button--primary {
-  z-index: 2;
-}
-
-.cursor-articles-section {
-  margin-bottom: var(--space-80);
-}
-
-.cursor-articles-card {
-  padding: var(--space-40);
-}
-
-.cursor-loading-state {
-  padding: var(--space-40);
-  text-align: center;
-}
-
-.cursor-articles-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-24);
-}
-
-.cursor-article-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: var(--space-32);
-  transition: transform 200ms ease, box-shadow 200ms ease;
-  border: 1px solid var(--border-primary-fallback);
-  box-shadow: none;
-  background: var(--surface-400);
-}
-
-.cursor-article-item:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-card);
-}
-
-.cursor-article-info {
-  flex: 1;
-  margin-right: var(--space-24);
-}
-
-.cursor-article-header {
-  margin-bottom: var(--space-16);
-}
-
-.cursor-article-title {
-  margin: 0 0 var(--space-12) 0;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: color 150ms ease;
-  color: var(--cursor-dark);
-  text-align: left;
+  border: 2px solid #f54e00;
+  color: #f54e00;
+  background: transparent;
+  transition: all 0.2s ease;
 }
-
-.cursor-article-title:hover {
-  color: var(--cursor-orange);
-}
-
-.cursor-article-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-16);
-}
-
-.cursor-meta-left {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-24);
-}
-
-.cursor-meta-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  color: var(--border-strong);
-}
-
-.cursor-meta-text {
-  color: var(--border-strong);
-}
-
-.cursor-meta-right {
-  display: flex;
-  gap: var(--space-8);
-}
-
-.cursor-status-tag,
-.cursor-visibility-tag,
-.cursor-ai-tag {
-  font-family: var(--font-system);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.048px;
-  border-radius: var(--radius-pill) !important;
-  padding: 3px 8px !important;
-}
-
-.cursor-article-content-preview {
-  margin-bottom: var(--space-16);
-}
-
-.cursor-content-text {
-  margin: 0;
-  color: var(--border-strong);
-  line-height: 1.6;
-}
-
-.cursor-article-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-.cursor-tag-item {
-  cursor: default;
-  transition: transform 150ms ease;
-  font-family: var(--font-system);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.048px;
-  border-radius: var(--radius-pill) !important;
-  padding: 3px 8px !important;
-}
-
-.cursor-tag-item:hover {
-  transform: translateY(-1px);
-}
-
-.cursor-article-actions {
-  display: flex;
-  flex-direction: row;
-  gap: var(--space-12);
-  align-items: flex-start;
-  min-width: auto;
-}
-
-.cursor-empty-state {
-  padding: var(--space-80) 0;
-  text-align: center;
-}
-
-.cursor-pagination-section {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-32) 0 var(--space-16) 0;
-  border-top: 1px solid var(--border-primary-fallback);
-  margin-top: var(--space-24);
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .cursor-page-header {
-    flex-direction: column;
-    gap: var(--space-16);
-    padding-top: var(--space-40);
-  }
-  
-  .header-left h1 {
-    font-size: 36px;
-    line-height: 1.20;
-    letter-spacing: -0.72px;
-  }
-  
-  .cursor-search-form {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .cursor-search-actions {
-    justify-content: flex-end;
-  }
-  
-  .cursor-article-item {
-    flex-direction: column;
-    gap: var(--space-20);
-  }
-  
-  .cursor-article-info {
-    margin-right: 0;
-  }
-  
-  .cursor-article-meta {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-12);
-  }
-  
-  .cursor-meta-left {
-    flex-direction: column;
-    gap: var(--space-12);
-  }
-  
-  .cursor-article-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-    width: 100%;
-  }
-  
-  .cursor-articles-card {
-    padding: var(--space-24);
-  }
-}
-
-@media (max-width: 600px) {
-  .header-left h1 {
-    font-size: 26px;
-    letter-spacing: -0.325px;
-  }
-  
-  .cursor-articles-card {
-    padding: var(--space-16);
-  }
-  
-  .cursor-article-item {
-    padding: var(--space-16);
-  }
+.btn-import:hover {
+  background: #f54e00;
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(245, 78, 0, 0.3);
 }
 </style>

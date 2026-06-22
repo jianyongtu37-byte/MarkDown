@@ -27,7 +27,7 @@
         </div>
         <p class="error-title">视频加载失败</p>
         <p class="error-desc">{{ errorMessage }}</p>
-        <button class="error-retry" @click="retryLoad">重新加载</button>
+        <button class="inline-flex px-4 py-1.5 rounded-md text-xs border border-solid border-white/20 bg-white/10 text-white/80 hover:bg-white/20 transition" @click="retryLoad">重新加载</button>
       </div>
     </div>
 
@@ -376,11 +376,11 @@ function seekTo(seconds: number) {
 }
 
 function startBiliTimer(startAt: number) {
-  biliCurrentSec = startAt
+  const startRealTime = Date.now() / 1000
   biliTimer = window.setInterval(() => {
-    biliCurrentSec++
+    biliCurrentSec = startAt + (Date.now() / 1000 - startRealTime)
     emit('time-update', biliCurrentSec)
-  }, 1000)
+  }, 250)
 }
 
 // 重试
@@ -565,22 +565,6 @@ defineExpose({ seekTo })
   margin: 0 0 12px;
   max-width: 280px;
   line-height: 1.5;
-}
-
-.error-retry {
-  padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-}
-
-.error-retry:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* 视频信息栏 */

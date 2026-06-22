@@ -45,17 +45,6 @@ function restorePlaceholdersToLinks(html: string, map: Map<string, string>, base
   return result
 }
 
-// 渲染Markdown（含时间戳插件）
-export function renderMarkdown(content: string): string {
-  if (!content) return ''
-  try {
-    return content
-  } catch (error) {
-    console.error('Markdown渲染失败:', error)
-    return content
-  }
-}
-
 // 提取时间戳
 export function extractTimestamps(content: string): { seconds: number; label: string; excerpt: string }[] {
   const timestamps: { seconds: number; label: string; excerpt: string }[] = []

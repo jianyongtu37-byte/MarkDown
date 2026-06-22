@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { articleApi } from '@/api/article'
+import { articleApi } from '@/utils/api'
 import type { ArticleDetail } from '@/types/article'
-import type { ArticleCreateWithVideoDTO } from '@/api/article'
+import type { ArticleCreateWithVideoDTO } from '@/utils/api'
 
 export const useArticleStore = defineStore('article', () => {
   const detail = ref<ArticleDetail | null>(null)      // 当前文章完整数据（含视频和时间戳）

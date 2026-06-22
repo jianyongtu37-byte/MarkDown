@@ -1,5 +1,5 @@
 <template>
-  <nav class="ts-nav">
+  <nav class="ts-nav glass-card rounded-2xl">
     <!-- 顶部：标题 + 统计 -->
     <div class="ts-nav-header">
       <div class="ts-nav-title-row">
@@ -277,16 +277,12 @@ watch(() => currentChapter.value?.id, () => {
 <style scoped>
 /* ===== 容器 ===== */
 .ts-nav {
-  width: 280px;
+  width: 100%;
+  max-width: 280px;
   padding: 0;
-  background: var(--surface-400);
-  border-radius: 12px;
-  border: 1px solid var(--border-primary-fallback);
   max-height: 600px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 /* ===== 头部 ===== */

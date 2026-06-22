@@ -1,5 +1,5 @@
 <template>
-  <div class="cursor-hot-article-card" :class="{ compact: compact }">
+  <div class="glass-card rounded-2xl overflow-hidden" :class="{ compact: compact }">
     <div class="hot-header">
       <div class="hot-title-row">
         <el-icon :size="18"><TrendCharts /></el-icon>
@@ -34,8 +34,8 @@
         @click="handleClick(article)"
       >
         <div class="hot-rank" :class="'rank-' + (index + 1)">
-          <span v-if="index < 3" class="rank-icon">
-            {{ ['🥇', '🥈', '🥉'][index] }}
+          <span v-if="index < 3" class="rank-icon" :class="['text-amber-500','text-slate-400','text-amber-700'][index]">
+            {{ index + 1 }}
           </span>
           <span v-else class="rank-number">{{ index + 1 }}</span>
         </div>
@@ -101,11 +101,7 @@ const handleTypeChange = () => {
 }
 
 const handleClick = (article: ArticleVO) => {
-  const routeUrl = router.resolve({
-    path: `/articles/${article.id}`,
-    query: { from: 'hot' }
-  })
-  window.open(routeUrl.href, '_blank')
+  router.push({ path: `/articles/${article.id}`, query: { from: 'hot' } })
 }
 
 onMounted(() => {
@@ -114,14 +110,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.cursor-hot-article-card {
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-  overflow: hidden;
-}
 
-.cursor-hot-article-card.compact .hot-list {
+.compact .hot-list {
   max-height: 400px;
   overflow-y: auto;
 }

@@ -4,10 +4,15 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/utils/api'
+import { useLayout } from '@/composables/useLayout'
 import { User, Edit, Lock, Key, Check } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { isMobile } = useLayout()
+
+// 移动端折叠面板状态（密码设置默认折叠）
+const activeCollapse = ref<string[]>([])
 
 const user = computed(() => authStore.user)
 
@@ -89,10 +94,10 @@ const handleUpdateProfile = async () => {
     if (profileForm.value.email) data.email = profileForm.value.email
 
     await authApi.updateProfile(data)
-    
+
     // 刷新用户信息
     await authStore.fetchUserInfo()
-    
+
     ElMessage.success('基本信息修改成功')
   } catch (error) {
     if (error instanceof Error) {
@@ -117,7 +122,7 @@ const handleUpdatePassword = async () => {
     })
 
     ElMessage.success('密码修改成功')
-    
+
     // 清空密码表单
     passwordForm.value = {
       oldPassword: '',
@@ -146,47 +151,50 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="cursor-profile-container">
-    <div class="cursor-section">
-      <div class="cursor-container">
+  <div class="relative min-h-screen overflow-hidden">
+    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
+
+    <section class="relative z-10 py-8 sm:py-16">
+      <div class="max-w-[1200px] mx-auto px-4 sm:px-6">
         <!-- 页面标题 -->
-        <div class="cursor-page-header">
+        <div class="flex justify-between items-start mb-6 sm:mb-8 pt-4 sm:pt-12">
           <div class="header-left">
-            <h1 class="cursor-display-hero">个人设置</h1>
-            <p class="subtitle cursor-body-secondary">管理您的账户信息和安全设置</p>
+            <h1 class="cursor-display-hero text-slate-800 mb-2 text-2xl sm:text-[length:var(--font-size-display)]">个人设置</h1>
+            <p class="text-slate-500 text-sm sm:text-base">管理您的账户信息和安全设置</p>
           </div>
         </div>
 
-        <div class="cursor-profile-layout">
-          <!-- 左侧：用户头像卡片 -->
-          <div class="cursor-profile-sidebar">
-            <div class="cursor-profile-card cursor-card">
-              <div class="cursor-profile-avatar-section">
-                <div class="cursor-avatar-wrapper">
-                  <el-avatar 
-                    :size="96" 
-                    :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username}`"
-                    class="cursor-avatar"
-                  />
+        <div class="grid gap-4 sm:gap-10 mb-36 sm:mb-20 grid-cols-1 md:grid-cols-[320px_1fr]">
+          <!-- 左侧：用户信息卡片 -->
+          <div class="self-start">
+            <div class="p-4 sm:p-10 glass-card rounded-2xl text-center">
+              <div class="mb-6 pb-6 border-b border-slate-200/50">
+                <div class="mb-4">
+                  <el-avatar
+                    :size="96"
+                    class="border-2 border-slate-200/50 transition-transform duration-200 hover:scale-105 avatar-initials avatar-initials-large"
+                  >
+                    {{ (user?.nickname || user?.username)?.charAt(0)?.toUpperCase() }}
+                  </el-avatar>
                 </div>
-                <h2 class="cursor-profile-name cursor-title-small">
+                <h2 class="text-lg text-slate-800 font-semibold m-0 mb-1">
                   {{ user?.nickname || user?.username }}
                 </h2>
-                <p class="cursor-profile-username cursor-body-secondary">
+                <p class="text-slate-500 text-sm m-0">
                   @{{ user?.username }}
                 </p>
               </div>
 
-              <div class="cursor-profile-info-list">
-                <div class="cursor-info-item">
-                  <span class="cursor-info-label cursor-system-caption">角色</span>
-                  <span class="cursor-info-value cursor-body">
+              <div class="flex flex-col gap-4">
+                <div class="flex flex-col gap-1 text-left">
+                  <span class="text-xs text-slate-400">角色</span>
+                  <span class="text-sm text-slate-800">
                     {{ user?.role === 'ROLE_ADMIN' ? '管理员' : '普通用户' }}
                   </span>
                 </div>
-                <div class="cursor-info-item">
-                  <span class="cursor-info-label cursor-system-caption">注册时间</span>
-                  <span class="cursor-info-value cursor-body">
+                <div class="flex flex-col gap-1 text-left">
+                  <span class="text-xs text-slate-400">注册时间</span>
+                  <span class="text-sm text-slate-800">
                     {{ user?.createTime ? new Date(user.createTime).toLocaleDateString('zh-CN') : '-' }}
                   </span>
                 </div>
@@ -195,14 +203,116 @@ onMounted(async () => {
           </div>
 
           <!-- 右侧：表单区域 -->
-          <div class="cursor-profile-main">
+          <!-- 移动端：折叠面板 -->
+          <div v-if="isMobile" class="flex flex-col gap-0">
+            <el-collapse v-model="activeCollapse" class="profile-collapse">
+              <!-- 基本信息（默认展开） -->
+              <el-collapse-item name="profile">
+                <template #title>
+                  <div class="flex items-center gap-3 py-1">
+                    <el-icon class="text-xl text-slate-800"><Edit /></el-icon>
+                    <div>
+                      <h3 class="text-base text-slate-800 font-semibold m-0">基本信息</h3>
+                      <p class="text-slate-400 text-xs m-0">昵称和邮箱</p>
+                    </div>
+                  </div>
+                </template>
+                <el-form
+                  ref="profileFormRef"
+                  :model="profileForm"
+                  :rules="profileRules"
+                  label-position="top"
+                >
+                  <div class="grid gap-4 grid-cols-2">
+                    <el-form-item prop="username" class="mb-0">
+                      <label class="block text-xs font-medium text-slate-700 mb-1 text-left">用户名</label>
+                      <el-input :model-value="user?.username" disabled size="default" />
+                    </el-form-item>
+                    <el-form-item prop="nickname" class="mb-0">
+                      <label class="block text-xs font-medium text-slate-700 mb-1 text-left">昵称</label>
+                      <el-input v-model="profileForm.nickname" placeholder="请输入昵称" clearable size="default" />
+                    </el-form-item>
+                  </div>
+                  <el-form-item prop="email" class="mb-0 mt-4">
+                    <label class="block text-xs font-medium text-slate-700 mb-1 text-left">邮箱</label>
+                    <el-input v-model="profileForm.email" placeholder="请输入邮箱地址" clearable size="default" />
+                  </el-form-item>
+                </el-form>
+              </el-collapse-item>
+
+              <!-- 安全设置（默认折叠） -->
+              <el-collapse-item name="security">
+                <template #title>
+                  <div class="flex items-center gap-3 py-1">
+                    <el-icon class="text-xl text-slate-800"><Lock /></el-icon>
+                    <div>
+                      <h3 class="text-base text-slate-800 font-semibold m-0">安全设置</h3>
+                      <p class="text-slate-400 text-xs m-0">修改密码</p>
+                    </div>
+                  </div>
+                </template>
+                <el-form
+                  ref="passwordFormRef"
+                  :model="passwordForm"
+                  :rules="passwordRules"
+                  label-position="top"
+                >
+                  <el-form-item prop="oldPassword" class="mb-4">
+                    <label class="block text-xs font-medium text-slate-700 mb-1 text-left">当前密码</label>
+                    <el-input v-model="passwordForm.oldPassword" type="password" placeholder="请输入当前密码" show-password size="default" />
+                  </el-form-item>
+                  <div class="grid gap-4 grid-cols-2">
+                    <el-form-item prop="newPassword" class="mb-0">
+                      <label class="block text-xs font-medium text-slate-700 mb-1 text-left">新密码</label>
+                      <el-input v-model="passwordForm.newPassword" type="password" placeholder="6-20位" show-password size="default" />
+                    </el-form-item>
+                    <el-form-item prop="confirmPassword" class="mb-0">
+                      <label class="block text-xs font-medium text-slate-700 mb-1 text-left">确认密码</label>
+                      <el-input v-model="passwordForm.confirmPassword" type="password" placeholder="再次输入" show-password size="default" @keyup.enter="handleUpdatePassword" />
+                    </el-form-item>
+                  </div>
+                </el-form>
+              </el-collapse-item>
+            </el-collapse>
+
+            <!-- 吸底操作栏 -->
+            <div class="sticky-action-bar">
+              <div class="sticky-action-bar-inner">
+                <button
+                  v-if="activeCollapse.includes('profile')"
+                  type="button"
+                  class="btn-primary flex-1"
+                  :disabled="profileLoading"
+                  @click="handleUpdateProfile"
+                >
+                  <el-icon><Check /></el-icon>
+                  <span v-if="!profileLoading">保存修改</span>
+                  <span v-else>保存中...</span>
+                </button>
+                <button
+                  v-if="activeCollapse.includes('security')"
+                  type="button"
+                  class="btn-primary flex-1"
+                  :disabled="passwordLoading"
+                  @click="handleUpdatePassword"
+                >
+                  <el-icon><Key /></el-icon>
+                  <span v-if="!passwordLoading">修改密码</span>
+                  <span v-else>修改中...</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 桌面端：保持原有布局 -->
+          <div v-else class="flex flex-col gap-8">
             <!-- 基本信息修改 -->
-            <div class="cursor-profile-section-card cursor-card">
-              <div class="cursor-section-header">
-                <el-icon class="cursor-section-icon"><Edit /></el-icon>
-                <div class="cursor-section-title-group">
-                  <h3 class="cursor-sub-heading">基本信息</h3>
-                  <p class="cursor-body-secondary">修改您的昵称和邮箱地址</p>
+            <div class="p-6 sm:p-10 glass-card rounded-2xl">
+              <div class="flex items-start gap-4 mb-8 pb-6 border-b border-slate-200/50">
+                <el-icon class="text-2xl text-slate-800 mt-1"><Edit /></el-icon>
+                <div class="flex-1">
+                  <h3 class="text-lg text-slate-800 font-semibold m-0 mb-1">基本信息</h3>
+                  <p class="text-slate-500 text-sm m-0">修改您的昵称和邮箱地址</p>
                 </div>
               </div>
 
@@ -211,47 +321,46 @@ onMounted(async () => {
                 :model="profileForm"
                 :rules="profileRules"
                 label-position="top"
-                class="cursor-profile-form"
               >
-                <div class="cursor-form-grid">
-                  <el-form-item prop="username" class="cursor-form-item">
-                    <div class="cursor-form-label cursor-system-caption">用户名</div>
+                <div class="grid gap-6 mb-8 grid-cols-1 sm:grid-cols-2">
+                  <el-form-item prop="username" class="mb-0">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">用户名</label>
                     <el-input
                       :model-value="user?.username"
                       disabled
                       placeholder="用户名不可修改"
                       size="large"
                     />
-                    <div class="cursor-form-hint cursor-caption">用户名是唯一标识，不可修改</div>
+                    <div class="text-xs text-slate-400 mt-1.5">用户名是唯一标识，不可修改</div>
                   </el-form-item>
 
-                  <el-form-item prop="nickname" class="cursor-form-item">
-                    <div class="cursor-form-label cursor-system-caption">昵称</div>
+                  <el-form-item prop="nickname" class="mb-0">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">昵称</label>
                     <el-input
                       v-model="profileForm.nickname"
                       placeholder="请输入昵称"
                       clearable
                       size="large"
                     />
-                    <div class="cursor-form-hint cursor-caption">在社区中显示的名称</div>
+                    <div class="text-xs text-slate-400 mt-1.5">在社区中显示的名称</div>
                   </el-form-item>
 
-                  <el-form-item prop="email" class="cursor-form-item">
-                    <div class="cursor-form-label cursor-system-caption">邮箱</div>
+                  <el-form-item prop="email" class="mb-0">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">邮箱</label>
                     <el-input
                       v-model="profileForm.email"
                       placeholder="请输入邮箱地址"
                       clearable
                       size="large"
                     />
-                    <div class="cursor-form-hint cursor-caption">用于接收通知和找回密码</div>
+                    <div class="text-xs text-slate-400 mt-1.5">用于接收通知和找回密码</div>
                   </el-form-item>
                 </div>
 
-                <div class="cursor-form-actions">
+                <div class="flex justify-end pt-6 border-t border-slate-200/50">
                   <button
                     type="button"
-                    class="cursor-btn-primary cursor-save-button"
+                    class="btn-primary px-4"
                     :disabled="profileLoading"
                     @click="handleUpdateProfile"
                   >
@@ -264,12 +373,12 @@ onMounted(async () => {
             </div>
 
             <!-- 密码修改 -->
-            <div class="cursor-profile-section-card cursor-card">
-              <div class="cursor-section-header">
-                <el-icon class="cursor-section-icon"><Lock /></el-icon>
-                <div class="cursor-section-title-group">
-                  <h3 class="cursor-sub-heading">修改密码</h3>
-                  <p class="cursor-body-secondary">定期更换密码可以提高账户安全性</p>
+            <div class="p-6 sm:p-10 glass-card rounded-2xl">
+              <div class="flex items-start gap-4 mb-8 pb-6 border-b border-slate-200/50">
+                <el-icon class="text-2xl text-slate-800 mt-1"><Lock /></el-icon>
+                <div class="flex-1">
+                  <h3 class="text-lg text-slate-800 font-semibold m-0 mb-1">修改密码</h3>
+                  <p class="text-slate-500 text-sm m-0">定期更换密码可以提高账户安全性</p>
                 </div>
               </div>
 
@@ -278,11 +387,10 @@ onMounted(async () => {
                 :model="passwordForm"
                 :rules="passwordRules"
                 label-position="top"
-                class="cursor-profile-form"
               >
-                <div class="cursor-form-grid">
-                  <el-form-item prop="oldPassword" class="cursor-form-item">
-                    <div class="cursor-form-label cursor-system-caption">当前密码</div>
+                <div class="grid gap-6 mb-8 grid-cols-1 sm:grid-cols-2">
+                  <el-form-item prop="oldPassword" class="mb-0">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">当前密码</label>
                     <el-input
                       v-model="passwordForm.oldPassword"
                       type="password"
@@ -292,8 +400,8 @@ onMounted(async () => {
                     />
                   </el-form-item>
 
-                  <el-form-item prop="newPassword" class="cursor-form-item">
-                    <div class="cursor-form-label cursor-system-caption">新密码</div>
+                  <el-form-item prop="newPassword" class="mb-0">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">新密码</label>
                     <el-input
                       v-model="passwordForm.newPassword"
                       type="password"
@@ -301,11 +409,11 @@ onMounted(async () => {
                       show-password
                       size="large"
                     />
-                    <div class="cursor-form-hint cursor-caption">至少6个字符</div>
+                    <div class="text-xs text-slate-400 mt-1.5">至少6个字符</div>
                   </el-form-item>
 
-                  <el-form-item prop="confirmPassword" class="cursor-form-item">
-                    <div class="cursor-form-label cursor-system-caption">确认新密码</div>
+                  <el-form-item prop="confirmPassword" class="mb-0">
+                    <label class="block text-sm font-medium text-slate-700 mb-1.5 text-left">确认新密码</label>
                     <el-input
                       v-model="passwordForm.confirmPassword"
                       type="password"
@@ -314,14 +422,14 @@ onMounted(async () => {
                       size="large"
                       @keyup.enter="handleUpdatePassword"
                     />
-                    <div class="cursor-form-hint cursor-caption">请再次输入新密码以确认</div>
+                    <div class="text-xs text-slate-400 mt-1.5">请再次输入新密码以确认</div>
                   </el-form-item>
                 </div>
 
-                <div class="cursor-form-actions">
+                <div class="flex justify-end pt-6 border-t border-slate-200/50">
                   <button
                     type="button"
-                    class="cursor-btn-primary cursor-save-button"
+                    class="btn-primary px-4"
                     :disabled="passwordLoading"
                     @click="handleUpdatePassword"
                   >
@@ -335,249 +443,63 @@ onMounted(async () => {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.cursor-profile-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
+/* 移动端折叠面板样式 */
+.profile-collapse {
+  border: none;
+  background: transparent;
+}
+.profile-collapse :deep(.el-collapse-item) {
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(226, 232, 240, 0.5);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+}
+.profile-collapse :deep(.el-collapse-item__header) {
+  background: transparent;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.3);
+  padding: 0 16px;
+  height: auto;
+  min-height: 56px;
+  line-height: normal;
+  font-size: inherit;
+  color: inherit;
+}
+.profile-collapse :deep(.el-collapse-item__wrap) {
+  background: transparent;
+  border-bottom: none;
+}
+.profile-collapse :deep(.el-collapse-item__content) {
+  padding: 16px;
 }
 
-.cursor-page-header {
+/* 吸底操作栏 */
+.sticky-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 1px solid rgba(226, 232, 240, 0.6);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.06);
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.sticky-action-bar-inner {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-40);
-  padding-top: var(--space-80);
-}
-
-.header-left h1 {
-  margin: 0 0 var(--space-8) 0;
-  color: var(--cursor-dark);
-  text-align: left;
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--border-strong);
-}
-
-/* 布局 */
-.cursor-profile-layout {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: var(--space-40);
-  margin-bottom: var(--space-80);
-}
-
-/* 左侧卡片 */
-.cursor-profile-sidebar {
-  position: sticky;
-  top: calc(var(--nav-height) + var(--space-24));
-  align-self: start;
-}
-
-.cursor-profile-card {
-  padding: var(--space-40);
-  text-align: center;
-}
-
-.cursor-profile-avatar-section {
-  margin-bottom: var(--space-24);
-  padding-bottom: var(--space-24);
-  border-bottom: 1px solid var(--border-primary-fallback);
-}
-
-.cursor-avatar-wrapper {
-  margin-bottom: var(--space-16);
-}
-
-.cursor-avatar {
-  border: 2px solid var(--border-primary-fallback);
-  transition: transform 200ms ease;
-}
-
-.cursor-avatar:hover {
-  transform: scale(1.05);
-}
-
-.cursor-profile-name {
-  margin: 0 0 var(--space-4) 0;
-  color: var(--cursor-dark);
-  text-align: center;
-}
-
-.cursor-profile-username {
-  margin: 0;
-  text-align: center;
-}
-
-.cursor-profile-info-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-}
-
-.cursor-info-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  text-align: left;
-}
-
-.cursor-info-label {
-  color: var(--border-strong);
-}
-
-.cursor-info-value {
-  color: var(--cursor-dark);
-}
-
-/* 右侧表单区域 */
-.cursor-profile-main {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-32);
-}
-
-.cursor-profile-section-card {
-  padding: var(--space-40);
-}
-
-.cursor-section-header {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-16);
-  margin-bottom: var(--space-32);
-  padding-bottom: var(--space-24);
-  border-bottom: 1px solid var(--border-primary-fallback);
-}
-
-.cursor-section-icon {
-  font-size: 24px;
-  color: var(--cursor-dark);
-  margin-top: 4px;
-}
-
-.cursor-section-title-group {
-  flex: 1;
-}
-
-.cursor-section-title-group h3 {
-  margin: 0 0 var(--space-4) 0;
-  text-align: left;
-}
-
-.cursor-section-title-group p {
-  margin: 0;
-  text-align: left;
-}
-
-/* 表单样式 */
-.cursor-profile-form {
-  width: 100%;
-}
-
-.cursor-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-24);
-  margin-bottom: var(--space-32);
-}
-
-.cursor-form-item {
-  margin-bottom: 0;
-}
-
-.cursor-form-label {
-  margin-bottom: var(--space-8);
-  display: block;
-}
-
-.cursor-form-hint {
-  margin-top: var(--space-6);
-  color: var(--border-strong);
-}
-
-.cursor-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: var(--space-24);
-  border-top: 1px solid var(--border-primary-fallback);
-}
-
-.cursor-save-button {
-  min-width: 160px;
-  padding: var(--space-12) var(--space-24);
-  font-size: 14px;
-  font-weight: 400;
-  border-radius: var(--radius-comfortable);
-  transition: color 150ms ease, box-shadow 200ms ease;
-  cursor: pointer;
-}
-
-.cursor-save-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* 响应式设计 */
-@media (max-width: 900px) {
-  .cursor-profile-layout {
-    grid-template-columns: 1fr;
-    gap: var(--space-32);
-  }
-
-  .cursor-profile-sidebar {
-    position: static;
-  }
-
-  .cursor-profile-card {
-    padding: var(--space-32);
-  }
-}
-
-@media (max-width: 768px) {
-  .cursor-page-header {
-    flex-direction: column;
-    gap: var(--space-16);
-    padding-top: var(--space-40);
-  }
-
-  .header-left h1 {
-    font-size: 36px;
-    line-height: 1.20;
-    letter-spacing: -0.72px;
-  }
-
-  .cursor-form-grid {
-    grid-template-columns: 1fr;
-    gap: var(--space-20);
-  }
-
-  .cursor-profile-section-card {
-    padding: var(--space-24);
-  }
-}
-
-@media (max-width: 600px) {
-  .header-left h1 {
-    font-size: 26px;
-    letter-spacing: -0.325px;
-  }
-
-  .cursor-profile-section-card {
-    padding: var(--space-20);
-  }
-
-  .cursor-profile-card {
-    padding: var(--space-24);
-  }
-
-  .cursor-save-button {
-    width: 100%;
-  }
+  gap: 12px;
+  max-width: 480px;
+  margin: 0 auto;
 }
 </style>

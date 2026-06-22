@@ -1,5 +1,5 @@
 <template>
-  <div class="cursor-version-history">
+  <div class="glass-card rounded-2xl overflow-hidden">
     <!-- 版本控制头部 -->
     <div class="version-header">
       <h3 class="version-title">
@@ -8,7 +8,6 @@
       </h3>
       <el-button
         v-if="!showDiff"
-        type="primary"
         link
         size="small"
         @click="$emit('close')"
@@ -17,7 +16,6 @@
       </el-button>
       <el-button
         v-else
-        type="info"
         link
         size="small"
         @click="exitDiffMode"
@@ -39,7 +37,7 @@
           <span class="diff-arrow">→</span>
           <el-tag type="success" size="small">版本 #{{ diffVersionId2 }}</el-tag>
         </div>
-        <el-button type="primary" link size="small" @click="exitDiffMode">
+        <el-button link size="small" @click="exitDiffMode">
           返回列表
         </el-button>
       </div>
@@ -90,11 +88,11 @@
             <!-- 非当前版本显示回滚按钮 -->
             <el-button
               v-if="index !== 0"
-              type="warning"
               link
               size="small"
               :loading="rollingBack && rollTargetId === version.id"
               @click="handleRollback(version.id)"
+              class="text-cursor-orange"
             >
               回滚到此版本
             </el-button>
@@ -105,7 +103,7 @@
               trigger="click"
               @command="(targetId: string) => handleDiff(version.id, Number(targetId))"
             >
-              <el-button type="primary" link size="small">
+              <el-button link size="small">
                 比较差异
                 <el-icon><ArrowDown /></el-icon>
               </el-button>
@@ -130,7 +128,7 @@
     <el-dialog
       v-model="rollbackDialogVisible"
       title="回滚确认"
-      width="400px"
+      :width="isMobile ? '90%' : '400px'"
       :close-on-click-modal="false"
     >
       <div class="rollback-dialog-content">
@@ -147,8 +145,8 @@
         />
       </div>
       <template #footer>
-        <el-button @click="rollbackDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="rollingBack" @click="confirmRollback">
+        <el-button @click="rollbackDialogVisible = false" class="btn-glass-pill">取消</el-button>
+        <el-button :loading="rollingBack" @click="confirmRollback" class="btn-primary">
           确认回滚
         </el-button>
       </template>
@@ -161,7 +159,10 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Clock, ArrowDown, WarningFilled } from '@element-plus/icons-vue'
 import { versionApi } from '@/utils/api'
+import { useLayout } from '@/composables/useLayout'
 import type { ArticleVersion } from '@/types/features'
+
+const { isMobile } = useLayout()
 
 const props = defineProps<{
   articleId: number
@@ -267,12 +268,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.cursor-version-history {
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-  overflow: hidden;
-}
 
 .version-header {
   display: flex;

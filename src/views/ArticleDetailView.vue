@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Edit, Delete, MagicStick, User, Clock, View, ChatDotSquare, Star, StarFilled, Download, Document, FolderOpened } from '@element-plus/icons-vue'
+import { ArrowLeft, Edit, Delete, MagicStick, User, Clock, View, ChatDotSquare, Star, StarFilled, Download, Document, FolderOpened, CircleCheck, WarningFilled } from '@element-plus/icons-vue'
 
-import { articleApi, likeApi, favoriteApi, exportApi } from '@/utils/api'
+import { articleApi, likeApi, favoriteApi, exportApi, readingHistoryApi } from '@/utils/api'
+import { cacheArticle, getCachedArticle } from '@/utils/articleCache'
 import type { FavoriteFolderVO } from '@/types/favorites'
 import { useAuthStore } from '@/stores/auth'
 import { useArticleStore } from '@/stores/article'
+import { useLayout } from '@/composables/useLayout'
 import VideoPlayer from '@/components/video/VideoPlayer.vue'
 import TimestampNav from '@/components/video/TimestampNav.vue'
 import CommentSection from '@/components/article/CommentSection.vue'
+import ArticleRecommendations from '@/components/article/ArticleRecommendations.vue'
+import RAGChatPanel from '@/components/rag/RAGChatPanel.vue'
+import KnowledgeGraphPanel from '@/components/knowledge/KnowledgeGraphPanel.vue'
 import type { ArticleDetail, VideoMeta, Timestamp } from '@/types/article'
 import { renderMarkdownWithVditor, convertTimestampsToLinks } from '@/utils/markdown'
 import { parseTimestamps } from '@/utils/timestampParser'
@@ -21,6 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const store = useArticleStore()
+const { isMobile } = useLayout()
 
 // 数据
 const article = ref<ArticleDetail | null>(null)
@@ -28,6 +34,15 @@ const loading = ref(false)
 const currentSec = ref(0)
 const renderedContent = ref('')
 const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
+const selectedText = ref('')
+
+// 监听文本选中（用于 RAG 选段提问）
+const handleTextSelection = () => {
+  const selection = window.getSelection()
+  if (selection && selection.toString().trim().length > 5) {
+    selectedText.value = selection.toString().trim()
+  }
+}
 
 // 获取文章ID
 const articleId = computed(() => {
@@ -47,9 +62,7 @@ const isAuthor = computed(() => {
 
 // 是否显示编辑/删除按钮（仅当从"我的文章"页面进入时才显示）
 const canEditOrDelete = computed(() => {
-  // 检查 referrer，如果是从 my-articles 来的，允许编辑/删除
-  const referrer = document.referrer
-  return referrer.includes('/my-articles') && isAuthor.value
+  return route.query.from === 'my-articles' && isAuthor.value
 })
 
 // 视频元数据（从 article.video 或 article.videoUrl 构建）
@@ -60,11 +73,11 @@ const videoMeta = computed<VideoMeta | null>(() => {
   // 如果后端只返回了 videoUrl 字符串，构建一个临时 VideoMeta
   const url = article.value?.videoUrl
   if (!url) return null
-  
+
   // 尝试识别视频平台
   let videoSource: 'YOUTUBE' | 'BILIBILI' | 'LOCAL' = 'LOCAL'
   let videoId = ''
-  
+
   if (url.includes('bilibili.com') || url.includes('b23.tv')) {
     videoSource = 'BILIBILI'
     const bvMatch = url.match(/(BV[a-zA-Z0-9]+)/)
@@ -74,7 +87,7 @@ const videoMeta = computed<VideoMeta | null>(() => {
     const ytMatch = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
     if (ytMatch && ytMatch[1]) videoId = ytMatch[1]
   }
-  
+
   return {
     id: 0,
     articleId: article.value?.id || 0,
@@ -105,6 +118,20 @@ const loadArticleDetail = async () => {
     loading.value = true
     const result = await articleApi.getDetail(articleId.value)
     article.value = result.data || null
+    // Cache article for offline access (skip if cached within 60s)
+    if (article.value) {
+      getCachedArticle(article.value.id).then((existing) => {
+        if (!existing || Date.now() - existing.cachedAt > 60_000) {
+          cacheArticle({
+            id: article.value!.id,
+            title: article.value!.title,
+            content: article.value!.content,
+            summary: article.value!.summary,
+            authorName: article.value!.authorName || article.value!.nickname,
+          }).catch(() => {})
+        }
+      }).catch(() => {})
+    }
   } catch (error: any) {
     ElMessage.error(error.message || '加载文章详情失败')
   } finally {
@@ -122,7 +149,7 @@ const updateRenderedContent = async () => {
     renderedContent.value = ''
     return
   }
-  
+
   try {
     const html = await renderMarkdownWithVditor(article.value.content)
     renderedContent.value = html
@@ -137,7 +164,7 @@ function onContentClick(e: Event) {
   const target = e.target as HTMLElement
   const ts = target.closest('[data-sec]')
   if (!ts) return
-  
+
   const seconds = Number(ts.getAttribute('data-sec'))
   if (!isNaN(seconds) && playerRef.value) {
     playerRef.value.seekTo(seconds)
@@ -163,6 +190,55 @@ const increaseViewCount = async () => {
   }
 }
 
+// 阅读进度上报
+const lastReportedProgress = ref(0)
+const maxProgress = ref(0)
+const readingProgress = ref(0)
+let progressTimer: ReturnType<typeof setInterval> | null = null
+
+const reportReadingProgress = () => {
+  if (!articleId.value) return
+  const scrollTop = window.scrollY
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight
+  if (docHeight <= 0) return
+  const current = Math.min(100, Math.round((scrollTop / docHeight) * 100))
+  if (current > maxProgress.value) {
+    maxProgress.value = current
+  }
+  readingProgress.value = maxProgress.value
+  const progress = maxProgress.value
+  // 进度变化超过 5% 才上报
+  if (Math.abs(progress - lastReportedProgress.value) < 5) return
+  lastReportedProgress.value = progress
+
+  // 提取当前可见区域第一段文字作为 lastPosition
+  const elements = document.querySelectorAll('.vditor-preview h1, .vditor-preview h2, .vditor-preview h3, .vditor-preview h4, .vditor-preview p')
+  let lastPosition = ''
+  for (const el of elements) {
+    const rect = el.getBoundingClientRect()
+    if (rect.top >= 0 && rect.top < window.innerHeight) {
+      lastPosition = el.textContent?.substring(0, 80) || ''
+      break
+    }
+  }
+
+  readingHistoryApi.updateProgress(articleId.value, progress, lastPosition).catch(() => {})
+}
+
+const startProgressTracking = () => {
+  if (progressTimer) return
+  progressTimer = setInterval(reportReadingProgress, 3000)
+  window.addEventListener('scroll', reportReadingProgress, { passive: true })
+}
+
+const stopProgressTracking = () => {
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+  window.removeEventListener('scroll', reportReadingProgress)
+}
+
 // 删除文章
 const deleteArticle = async () => {
   try {
@@ -171,14 +247,17 @@ const deleteArticle = async () => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     await articleApi.delete(articleId.value)
     ElMessage.success('文章删除成功')
-    
+    article.value = null
+
     // 根据来源页面决定返回哪个列表
     const from = route.query.from
     if (from === 'my-articles') {
       router.push('/my-articles')
+    } else if (from === 'reading-history') {
+      router.push('/reading-history')
     } else {
       router.push('/articles')
     }
@@ -200,6 +279,8 @@ const backToList = () => {
   const from = route.query.from
   if (from === 'my-articles') {
     router.push('/my-articles')
+  } else if (from === 'reading-history') {
+    router.push('/reading-history')
   } else {
     router.push('/articles')
   }
@@ -333,11 +414,12 @@ const toggleAllowExport = async () => {
   if (!articleId.value || !article.value) return
   try {
     updatingAllowExport.value = true
-    const newValue = article.value.allowExport === 1 ? 0 : 1
-    await articleApi.updateAllowExport(articleId.value, newValue)
-    article.value.allowExport = newValue
-    ElMessage.success(newValue === 1 ? '已开启他人导出权限' : '已关闭他人导出权限')
+    // v-model 已经将 allowExport 更新为目标值，直接使用即可
+    await articleApi.updateAllowExport(articleId.value, article.value.allowExport ?? 0)
+    ElMessage.success(article.value.allowExport === 1 ? '已开启他人导出权限' : '已关闭他人导出权限')
   } catch (error: any) {
+    // 接口失败时回滚 UI
+    article.value.allowExport = article.value.allowExport === 1 ? 0 : 1
     ElMessage.error(error.message || '操作失败')
   } finally {
     updatingAllowExport.value = false
@@ -428,16 +510,26 @@ const formatTime = (time?: string) => {
         return
       }
     }
-    
+
     if (articleId.value) {
       loadArticleDetail()
       increaseViewCount()
+      startProgressTracking()
     }
+
+    // 监听文本选中（用于 RAG 选段提问）
+    document.addEventListener('mouseup', handleTextSelection)
+  })
+
+  onUnmounted(() => {
+    reportReadingProgress()
+    stopProgressTracking()
+    document.removeEventListener('mouseup', handleTextSelection)
   })
 </script>
 
 <template>
-  <div class="viewer-layout">
+  <div class="flex gap-6 p-6 max-w-[1400px] mx-auto min-h-screen relative max-lg:flex-col">
     <!-- 左侧时间戳导航 -->
     <TimestampNav
       :timestamps="displayTimestamps"
@@ -446,29 +538,33 @@ const formatTime = (time?: string) => {
       v-if="displayTimestamps.length > 0"
     />
 
-    <main class="viewer-main">
-      <div class="cursor-article-detail-container">
-        <div class="article-max-width-wrapper">
-          
-          <div v-if="loading" class="cursor-card loading-card">
+    <main class="flex-1 min-w-0">
+      <!-- 顶部阅读进度条 -->
+      <div class="reading-progress-bar" :style="{ width: readingProgress + '%' }"></div>
+      <div class="relative overflow-hidden">
+        <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
+
+        <div class="relative z-10 py-16 max-w-[1200px] mx-auto px-6">
+
+          <div v-if="loading" class="glass-card rounded-2xl p-6 sm:p-10">
             <el-skeleton :rows="10" animated />
           </div>
-          
-          <div v-else-if="article" class="cursor-article-content">
-            
-            <div class="article-top-actions">
-              <el-button @click="backToList" plain class="cursor-btn-pill">
+
+          <div v-else-if="article" class="space-y-6">
+
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <button @click="backToList" class="btn-glass-pill">
                 <el-icon><ArrowLeft /></el-icon>
                 返回列表
-              </el-button>
-              
-              <div v-if="canEditOrDelete" class="action-right">
-                <el-button type="warning" @click="editArticle" class="cursor-btn-pill">
+              </button>
+
+              <div v-if="canEditOrDelete" class="flex gap-3 w-full md:w-auto">
+                <button @click="editArticle" class="btn-primary">
                   <el-icon><Edit /></el-icon> 编辑
-                </el-button>
-                <el-button type="danger" plain @click="deleteArticle" class="cursor-btn-pill">
+                </button>
+                <button @click="deleteArticle" class="btn-glass-pill">
                   <el-icon><Delete /></el-icon> 删除
-                </el-button>
+                </button>
               </div>
             </div>
 
@@ -478,101 +574,87 @@ const formatTime = (time?: string) => {
               ref="playerRef"
               :video-meta="videoMeta"
               @time-update="currentSec = $event"
-              class="video-player-section"
+              class="mb-0"
             />
 
-            <div class="cursor-card article-header-card">
-              <h1 class="article-title">{{ article.title }}</h1>
-              
-              <div class="article-meta-info">
-                <span class="meta-item">
-                  <el-icon><User /></el-icon>
-                  {{ article.authorName || article.nickname || '未知用户' }}
-                </span>
-                <span class="meta-item">
-                  <el-icon><Clock /></el-icon>
-                  发布于 {{ formatTime(article.createdAt) }}
-                </span>
-                <span class="meta-item">
-                  <el-icon><View /></el-icon>
-                  {{ article.viewCount || 0 }} 次阅读
-                </span>
+            <div class="glass-card rounded-2xl p-6 sm:p-8 lg:p-10">
+              <h1 class="cursor-section-heading text-slate-800 text-2xl font-semibold mb-6">{{ article.title }}</h1>
+
+              <div class="flex items-center flex-wrap gap-x-2 gap-y-1 text-xs text-slate-400 mb-5">
+                <span class="font-medium text-slate-500">{{ article.authorName || article.nickname || article.username || '未知用户' }}</span>
+                <span class="text-slate-400">(ID: {{ article.userId }})</span>
+                <span>&middot;</span>
+                <span>发布于 {{ formatTime(article.createTime || article.createdAt) }}</span>
+                <span>&middot;</span>
+                <span>{{ article.viewCount || 0 }} 次阅读</span>
               </div>
-              
-              <div class="article-status-tags">
-                <el-tag v-if="article.status === 2" type="success" effect="plain" round>公开</el-tag>
-                <el-tag v-else-if="article.status === 1" type="info" effect="plain" round>私密</el-tag>
-                <el-tag v-else type="warning" effect="plain" round>草稿</el-tag>
-                <el-tag v-if="article.aiStatus === 1" type="primary" effect="plain" round>
+
+              <div class="flex items-center flex-wrap gap-2.5 pt-5 border-t border-slate-200">
+                <span v-if="article.status === 2" class="inline-flex items-center text-[11px] px-2.5 py-0.5 rounded-full bg-green-50 text-green-600 font-medium">公开</span>
+                <span v-else-if="article.status === 1" class="inline-flex items-center text-[11px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">私密</span>
+                <span v-else class="inline-flex items-center text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">草稿</span>
+                <span v-if="article.aiStatus === 1" class="inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-500 font-medium">
                   <el-icon><MagicStick /></el-icon> AI处理
-                </el-tag>
-                
+                </span>
+
                 <template v-if="article.tags && article.tags.length > 0">
-                  <el-divider direction="vertical" />
-                  <el-tag 
-                    v-for="tag in article.tags" 
-                    :key="tag.id" 
-                    type="info" 
-                    round 
-                    class="topic-tag"
+                  <span class="w-px h-4 bg-slate-200" />
+                  <span
+                    v-for="tag in article.tags"
+                    :key="tag.id"
+                    class="inline-flex items-center text-[11px] px-2.5 py-0.5 rounded-full text-orange-500 border border-slate-200 font-medium"
                   >
                     # {{ tag.name }}
-                  </el-tag>
+                  </span>
                 </template>
               </div>
             </div>
-            
-            <div v-if="article.summary" class="cursor-card ai-summary-card">
-              <div class="ai-summary-header">
-                <el-icon><ChatDotSquare /></el-icon>
-                <span>AI 核心摘要</span>
-              </div>
-              <div class="ai-summary-content">
-                {{ article.summary }}
+
+            <div v-if="article.summary" class="glass-card rounded-2xl relative overflow-hidden">
+              <div class="absolute left-0 top-0 bottom-0 w-1 bg-orange-400 rounded-l-2xl"></div>
+              <div class="p-6 pl-7">
+                <div class="flex items-center gap-2 text-orange-500 text-base font-medium mb-3">
+                  <el-icon><ChatDotSquare /></el-icon>
+                  <span>AI 核心摘要</span>
+                </div>
+                <div class="text-slate-700 leading-relaxed text-[17px]">
+                  {{ article.summary }}
+                </div>
               </div>
             </div>
-            
-            <div class="cursor-card article-body-card">
-              <div 
-                id="vditor-preview" 
-                class="vditor-preview markdown-content"
+
+            <!-- 知识图谱面板 -->
+            <KnowledgeGraphPanel
+              v-if="articleId"
+              :article-id="Number(articleId)"
+            />
+
+            <div class="glass-card rounded-2xl p-6 sm:p-8 lg:p-10">
+              <div
+                id="vditor-preview"
+                class="vditor-preview markdown-content text-slate-700 leading-relaxed"
                 v-html="renderedContent"
                 @click="onContentClick"
               />
             </div>
 
             <!-- 点赞/收藏操作栏 -->
-            <div class="cursor-card interaction-card">
-              <div class="interaction-actions">
+            <div class="glass-card rounded-2xl py-5 px-5 sm:px-10">
+              <div class="flex gap-4 items-center">
                 <el-button
-                  :type="liked ? 'warning' : 'default'"
-                  :class="['interaction-btn', { 'is-active': liked }]"
+                  :class="['btn-glass-pill', { 'btn-glass-pill-active': liked }]"
                   @click="toggleLike"
-                  round
                 >
                   <el-icon><StarFilled v-if="liked" /><Star v-else /></el-icon>
                   <span>点赞 {{ likeCount > 0 ? likeCount : '' }}</span>
                 </el-button>
                 <el-button
-                  v-if="favorited"
-                  type="warning"
-                  class="interaction-btn is-active"
-                  @click="unfavorite"
-                  round
+                  :class="['btn-glass-pill', { 'btn-glass-pill-active': favorited }]"
+                  @click="favorited ? unfavorite() : openFavoriteDialog()"
                   :loading="favoriting"
                 >
-                  <el-icon><StarFilled /></el-icon>
-                  <span>已收藏</span>
-                </el-button>
-                <el-button
-                  v-else
-                  type="default"
-                  class="interaction-btn"
-                  @click="openFavoriteDialog"
-                  round
-                >
-                  <el-icon><Star /></el-icon>
-                  <span>收藏</span>
+                  <el-icon><StarFilled v-if="favorited" /><Star v-else /></el-icon>
+                  <span>{{ favorited ? '已收藏' : '收藏' }}</span>
                 </el-button>
               </div>
             </div>
@@ -581,43 +663,42 @@ const formatTime = (time?: string) => {
             <el-dialog
               v-model="showFavoriteDialog"
               title="选择收藏夹"
-              width="420px"
+              :width="isMobile ? '90%' : '420px'"
               :close-on-click-modal="false"
             >
-              <div class="favorite-folder-list">
+              <div class="max-h-80 overflow-y-auto">
                 <div
                   v-for="folder in favoriteFolders"
                   :key="folder.id"
-                  class="favorite-folder-item"
-                  :class="{ 'is-selected': selectedFolderIdForFavorite === folder.id }"
+                  class="flex items-center gap-3 px-4 py-3 cursor-pointer rounded-xl border border-transparent mb-2 transition-colors duration-150 hover:bg-slate-50"
+                  :class="{ '!bg-orange-50 !border-orange-400': selectedFolderIdForFavorite === folder.id }"
                   @click="selectedFolderIdForFavorite = folder.id"
                 >
-                  <el-icon class="folder-icon"><FolderOpened /></el-icon>
-                  <div class="folder-info">
-                    <span class="folder-name">{{ folder.name }}</span>
-                    <span class="folder-count">{{ folder.articleCount }} 篇文章</span>
+                  <el-icon class="text-orange-500 text-xl shrink-0"><FolderOpened /></el-icon>
+                  <div class="flex-1 flex flex-col gap-0.5 min-w-0">
+                    <span class="text-sm font-medium text-slate-800 truncate">{{ folder.name }}</span>
+                    <span class="text-[11px] text-slate-400">{{ folder.articleCount }} 篇文章</span>
                   </div>
                   <el-icon
                     v-if="selectedFolderIdForFavorite === folder.id"
-                    class="check-icon"
-                    color="var(--cursor-orange)"
+                    class="text-base text-orange-500 shrink-0"
                   >
                     <StarFilled />
                   </el-icon>
                 </div>
-                <div v-if="favoriteFolders.length === 0 && !loadingFolders" class="no-folders">
+                <div v-if="favoriteFolders.length === 0 && !loadingFolders" class="py-5">
                   <el-empty description="暂无收藏夹，将收藏到默认收藏夹" :image-size="60" />
                 </div>
-                <div v-if="loadingFolders" class="loading-folders">
+                <div v-if="loadingFolders" class="py-5">
                   <el-skeleton :rows="3" animated />
                 </div>
               </div>
               <template #footer>
-                <el-button @click="showFavoriteDialog = false">取消</el-button>
+                <button @click="showFavoriteDialog = false" class="btn-glass-pill">取消</button>
                 <el-button
-                  type="primary"
                   :loading="favoriting"
                   @click="confirmFavorite"
+                  class="btn-primary"
                 >
                   确定收藏
                 </el-button>
@@ -626,56 +707,50 @@ const formatTime = (time?: string) => {
 
 
             <!-- 导出操作栏 -->
-            <div class="cursor-card export-card">
-              <div class="export-header">
+            <div class="glass-card rounded-2xl py-5 px-5 sm:px-10">
+              <div class="flex items-center gap-2 text-slate-800 text-base font-medium mb-4">
                 <el-icon><Download /></el-icon>
                 <span>导出文章</span>
               </div>
-              <div class="export-actions">
+              <div class="flex gap-3 flex-wrap">
                 <el-button
-                  type="primary"
-                  plain
                   :loading="exportingPdf"
                   :disabled="exportingPdf || exportingWord || (!isAuthor && article.allowExport !== 1)"
                   @click="exportAsPdf"
-                  round
-                  class="cursor-btn-pill"
+                  class="btn-glass-pill"
                 >
                   <el-icon><Document /></el-icon>
                   导出为 PDF
                 </el-button>
                 <el-button
-                  type="primary"
-                  plain
                   :loading="exportingWord"
                   :disabled="exportingPdf || exportingWord || (!isAuthor && article.allowExport !== 1)"
                   @click="exportAsWord"
-                  round
-                  class="cursor-btn-pill"
+                  class="btn-glass-pill"
                 >
                   <el-icon><Document /></el-icon>
                   导出为 Word
                 </el-button>
               </div>
               <!-- 非作者：显示导出权限状态 -->
-              <div v-if="!isAuthor" class="export-permission-hint">
+              <div v-if="!isAuthor" class="mt-2">
                 <el-divider />
-                <div class="permission-hint-row">
-                  <el-icon :color="article.allowExport === 1 ? 'var(--cursor-orange)' : 'var(--color-text-danger)'">
-                    <component :is="article.allowExport === 1 ? 'CircleCheck' : 'Warning' " />
+                <div class="flex items-center gap-2 text-sm font-medium">
+                  <el-icon :color="article.allowExport === 1 ? '#16a34a' : '#dc2626'">
+                    <component :is="article.allowExport === 1 ? 'CircleCheck' : 'WarningFilled'" />
                   </el-icon>
-                  <span :style="{ color: article.allowExport === 1 ? 'var(--cursor-dark)' : 'var(--color-text-danger)' }">
+                  <span :style="{ color: article.allowExport === 1 ? '#334155' : '#dc2626' }">
                     {{ article.allowExport === 1 ? '作者已允许导出此文章' : '作者已禁止导出此文章' }}
                   </span>
                 </div>
               </div>
               <!-- 作者导出权限开关 -->
-              <div v-if="isAuthor" class="export-permission-toggle">
+              <div v-if="isAuthor" class="mt-2">
                 <el-divider />
-                <div class="permission-toggle-row">
-                  <div class="permission-toggle-info">
-                    <span class="permission-toggle-label">允许他人导出</span>
-                    <span class="permission-toggle-desc">
+                <div class="flex items-center justify-between gap-4">
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm font-medium text-slate-800">允许他人导出</span>
+                    <span class="text-[11px] text-slate-400">
                       {{ article.allowExport === 1 ? '其他用户可以导出此文章' : '仅作者可以导出此文章' }}
                     </span>
                   </div>
@@ -685,22 +760,25 @@ const formatTime = (time?: string) => {
                     :inactive-value="0"
                     :loading="updatingAllowExport"
                     @change="toggleAllowExport"
-                    active-color="var(--cursor-orange)"
+                    active-color="#f54e00"
                   />
                 </div>
               </div>
             </div>
 
             <!-- 评论区 -->
-            <div class="cursor-card comment-section-card">
+            <div class="glass-card rounded-2xl p-6 sm:p-8">
               <CommentSection :article-id="articleId" />
             </div>
 
+            <!-- 相关推荐 -->
+            <ArticleRecommendations :article-id="articleId" />
+
           </div>
-          
-          <div v-else class="cursor-card empty-card">
+
+          <div v-else class="glass-card rounded-2xl p-6 sm:p-10">
             <el-empty description="文章不存在或已被删除">
-              <el-button type="primary" @click="backToList" class="cursor-btn-primary">返回文章列表</el-button>
+              <el-button @click="backToList" class="btn-primary">返回文章列表</el-button>
             </el-empty>
           </div>
 
@@ -708,432 +786,26 @@ const formatTime = (time?: string) => {
       </div>
     </main>
   </div>
+
+  <!-- RAG 知识问答面板 -->
+  <RAGChatPanel
+    v-if="article"
+    :article-id="articleId"
+    :article-title="article.title"
+    :selected-text="selectedText"
+  />
 </template>
 
 <style scoped>
-/* 容器背景，严格使用你的变量 */
-.cursor-article-detail-container {
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-  padding: var(--space-32) 0;
-}
-
-/* 限制最大宽度，保证阅读舒适度 */
-.article-max-width-wrapper {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 0 var(--space-20);
-}
-
-/* 通用卡片样式：恢复你原本的层级感 */
-.cursor-card {
-  background: var(--surface-400);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-  margin-bottom: var(--space-24); /* 卡片之间的间距 */
-  box-shadow: none;
-}
-
-/* 顶部操作栏 */
-.article-top-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-20);
-}
-
-.action-right {
-  display: flex;
-  gap: var(--space-12);
-}
-
-/* --- 1. 头部卡片 --- */
-.article-header-card {
-  padding: var(--space-40);
-}
-
-.article-title {
-  margin: 0 0 var(--space-24) 0;
-  font-size: 36px;
-  font-weight: 700;
-  color: var(--cursor-dark);
-  line-height: 1.4;
-  letter-spacing: -0.5px;
-}
-
-.article-meta-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-24);
-  color: var(--border-strong);
-  font-size: 14px;
-  margin-bottom: var(--space-20);
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.article-status-tags {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-top: var(--space-20);
-  border-top: 1px dashed var(--border-primary-fallback);
-}
-
-.topic-tag {
-  color: var(--cursor-orange);
-  background: transparent;
-  border-color: var(--border-primary-fallback);
-}
-
-/* --- 2. AI 摘要卡片 --- */
-.ai-summary-card {
-  padding: var(--space-24) var(--space-32);
-  background: var(--surface-300); /* 使用稍暗一点的表面色区分 */
-  border-left: 4px solid var(--cursor-orange); /* 用主题色强调 */
-}
-
-.ai-summary-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--cursor-orange);
-  font-weight: 600;
-  font-size: 16px;
-  margin-bottom: var(--space-12);
-}
-
-.ai-summary-content {
-  color: var(--cursor-dark);
-  font-size: 15px;
-  line-height: 1.8;
-}
-
-/* --- 3. 正文卡片 --- */
-.article-body-card {
-  padding: var(--space-40);
-}
-
-.vditor-preview {
-  padding: 0;
-}
-
-/* * Markdown 排版核心优化 
- * 彻底解决"太密"、"结构不突出"的问题
- */
-.vditor-preview :deep(.vditor-reset) {
-  font-family: var(--font-serif), sans-serif; /* 沿用你的字体变量 */
-  font-size: 16px;
-  line-height: 2.0; /* 【关键】加大了中文阅读的行高 */
-  color: var(--cursor-dark);
-}
-
-/* 段落间距拉开 */
-.vditor-preview :deep(.vditor-reset p) {
-  margin: 1.5em 0; 
-}
-
-/* 突出标题层次结构 */
-.vditor-preview :deep(.vditor-reset h1),
-.vditor-preview :deep(.vditor-reset h2),
-.vditor-preview :deep(.vditor-reset h3) {
-  color: var(--cursor-dark);
-  font-weight: 600;
-  margin-top: 2.5em; /* 标题上方留出大片呼吸空间 */
-  margin-bottom: 1em;
-}
-
-/* H2 添加底边框，让文章章节更分明 */
-.vditor-preview :deep(.vditor-reset h2) {
-  font-size: 1.5em;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-primary-fallback);
-}
-
-.vditor-preview :deep(.vditor-reset h3) {
-  font-size: 1.25em;
-}
-
-/* 引用样式回归你的主题色 */
-.vditor-preview :deep(.vditor-reset blockquote) {
-  border-left: 4px solid var(--cursor-orange);
-  margin: 1.5em 0;
-  padding: 16px 20px;
-  color: var(--border-strong);
-  background: var(--surface-300);
-  border-radius: 0 var(--radius-comfortable) var(--radius-comfortable) 0;
-}
-
-/* 代码块样式 */
-.vditor-preview :deep(.vditor-reset code) {
-  background: var(--surface-300);
-  color: var(--cursor-orange);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-.vditor-preview :deep(.vditor-reset pre) {
-  background: var(--surface-300);
-  border: 1px solid var(--border-primary-fallback);
-  border-radius: var(--radius-comfortable);
-  padding: 16px;
-  line-height: 1.6;
-  margin: 1.5em 0;
-}
-
-/* --- 响应式适配 --- */
-@media (max-width: 768px) {
-  .article-max-width-wrapper {
-    padding: 0 12px;
-  }
-  
-  .article-header-card,
-  .article-body-card {
-    padding: var(--space-24);
-  }
-  
-  .article-title {
-    font-size: 28px;
-  }
-  
-  .vditor-preview :deep(.vditor-reset) {
-    line-height: 1.8;
-  }
-}
-
-/* 视频播放器相关样式 */
-.video-player-section {
-  margin-bottom: 20px;
-}
-
-/* 时间戳链接样式 */
-.markdown-content :deep(.timestamp-link) {
-  color: var(--cursor-orange);
-  cursor: pointer;
-  text-decoration: underline;
-  transition: color 0.2s;
-}
-
-.markdown-content :deep(.timestamp-link:hover) {
-  color: var(--cursor-orange-dark);
-  text-decoration: none;
-}
-
-/* --- 4. 互动操作栏 --- */
-.interaction-card {
-  padding: var(--space-20) var(--space-40);
-}
-
-.interaction-actions {
-  display: flex;
-  gap: var(--space-16);
-  align-items: center;
-}
-
-.interaction-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  font-size: 14px;
-}
-
-.interaction-btn.is-active {
-  color: var(--cursor-orange);
-  border-color: var(--cursor-orange);
-  background: color-mix(in srgb, var(--cursor-orange) 8%, transparent);
-}
-
-/* --- 5. 导出卡片 --- */
-.export-card {
-  padding: var(--space-20) var(--space-40);
-}
-
-.export-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--cursor-dark);
-  font-weight: 600;
-  font-size: 15px;
-  margin-bottom: var(--space-16);
-}
-
-.export-actions {
-  display: flex;
-  gap: var(--space-12);
-  flex-wrap: wrap;
-}
-
-/* 导出权限开关 */
-.export-permission-toggle {
-  margin-top: var(--space-8);
-}
-
-.permission-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-16);
-}
-
-.permission-toggle-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.permission-toggle-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cursor-dark);
-}
-
-.permission-toggle-desc {
-  font-size: 12px;
-  color: var(--border-strong);
-}
-
-/* 非作者导出权限提示 */
-.export-permission-hint {
-  margin-top: var(--space-8);
-}
-
-.permission-hint-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  font-size: 13px;
-}
-
-/* --- 收藏夹选择对话框样式 --- */
-.favorite-folder-list {
-  max-height: 300px;
-  overflow-y: auto;
-  padding: var(--space-8) 0;
-}
-
-.favorite-folder-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  padding: var(--space-12) var(--space-16);
-  cursor: pointer;
-  border-radius: var(--radius-comfortable);
-  transition: background-color 0.2s;
-  border: 1px solid transparent;
-  margin-bottom: var(--space-8);
-}
-
-.favorite-folder-item:hover {
-  background-color: var(--surface-300);
-}
-
-.favorite-folder-item.is-selected {
-  background-color: color-mix(in srgb, var(--cursor-orange) 8%, transparent);
-  border-color: var(--cursor-orange);
-}
-
-.folder-icon {
-  font-size: 24px;
-  color: var(--cursor-orange);
-}
-
-.folder-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.folder-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--cursor-dark);
-}
-
-.folder-count {
-  font-size: 12px;
-  color: var(--border-strong);
-}
-
-.check-icon {
-  font-size: 18px;
-}
-
-.no-folders,
-.loading-folders {
-  padding: var(--space-20) 0;
-}
-
-/* --- 6. 评论区卡片 --- */
-.comment-section-card {
-  padding: var(--space-32);
-}
-
-
-/* 查看器布局样式 */
-.viewer-layout {
-  display: flex;
-  gap: 24px;
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
-  min-height: 100vh;
-  background-color: var(--cursor-cream);
-}
-
-.viewer-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-/* 响应式设计 */
-@media (max-width: 1024px) {
-  .viewer-layout {
-    flex-direction: column;
-  }
-  
-  .article-header-card,
-  .article-body-card {
-    padding: 24px;
-  }
-  
-  .article-title {
-    font-size: 28px;
-  }
-  
-  .markdown-content {
-    line-height: 1.8;
-  }
-}
-
-@media (max-width: 768px) {
-  .viewer-layout {
-    padding: 12px;
-  }
-  
-  .article-meta-info {
-    flex-direction: column;
-    gap: 12px;
-  }
-  
-  .article-top-actions {
-    flex-direction: column;
-    gap: 12px;
-    align-items: flex-start;
-  }
-  
-  .action-right {
-    width: 100%;
-    justify-content: flex-start;
-  }
+.reading-progress-bar {
+  position: fixed;
+  top: env(safe-area-inset-top, 0);
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #f54e00, color-mix(in srgb, #f54e00 60%, transparent));
+  z-index: 1000;
+  transition: width 0.1s linear;
+  border-radius: 0 2px 2px 0;
 }
 </style>

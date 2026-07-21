@@ -8,6 +8,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'send', question: string): void
+  (e: 'stop'): void
   (e: 'update:modelValue', value: string): void
 }>()
 
@@ -26,6 +27,7 @@ const handleSend = () => {
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
+    if (props.loading) return
     handleSend()
   }
 }
@@ -33,17 +35,6 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 <template>
   <div class="input-bar">
-    <button class="input-action-btn" title="附件">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-      </svg>
-    </button>
-    <button class="input-action-btn" title="语音">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-      </svg>
-    </button>
-
     <input
       v-model="question"
       type="text"
@@ -53,9 +44,23 @@ const handleKeydown = (e: KeyboardEvent) => {
       @keydown="handleKeydown"
     />
 
+    <!-- Stop button (visible when streaming) -->
     <button
+      v-if="loading"
+      class="stop-btn"
+      @click="emit('stop')"
+      title="停止生成"
+    >
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+      </svg>
+    </button>
+
+    <!-- Send button (visible when not streaming) -->
+    <button
+      v-else
       class="send-btn"
-      :disabled="!question.trim() || loading"
+      :disabled="!question.trim()"
       @click="handleSend"
     >
       <svg class="w-4 h-4 translate-x-px -translate-y-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,24 +88,6 @@ const handleKeydown = (e: KeyboardEvent) => {
 .input-bar:focus-within {
   background: rgba(255, 255, 255, 1);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 0 0 2px rgba(191, 219, 254, 0.5);
-}
-
-.input-action-btn {
-  padding: 8px;
-  color: #9ca3af;
-  background: transparent;
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.input-action-btn:hover {
-  color: #4b5563;
-  background: #f3f4f6;
 }
 
 .input-field {
@@ -145,5 +132,46 @@ const handleKeydown = (e: KeyboardEvent) => {
 .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.stop-btn {
+  background: #ef4444;
+  color: white;
+  padding: 10px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  transition: all 0.2s;
+  flex-shrink: 0;
+  animation: pulse-stop 1.5s ease-in-out infinite;
+}
+
+.stop-btn:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes pulse-stop {
+  0%, 100% { box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 2px 16px rgba(239, 68, 68, 0.5); }
+}
+
+/* Dark mode */
+[data-theme="dark"] .rag-input-wrapper {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .rag-input-wrapper:focus-within {
+  background: rgba(30, 41, 59, 0.95);
+}
+[data-theme="dark"] .rag-input-textarea {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .rag-input-textarea::placeholder {
+  color: #64748b;
 }
 </style>

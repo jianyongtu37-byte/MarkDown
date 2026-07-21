@@ -30,7 +30,6 @@ export interface ArticleCreateDTO {
 // 文章VO（视图对象）
 export interface ArticleVO {
   id: number
-  userId: number
   categoryId?: number
   title: string
   content: string
@@ -51,6 +50,21 @@ export interface ArticleVO {
   nickname?: string
   username?: string
   categoryName?: string
+  noteDate?: string
+  isPinned?: number
+  allowExport?: number
+  pinnedTime?: string
+}
+
+export interface CalendarDay {
+  date: string
+  hasNote: boolean
+  articleId?: number
+  title?: string
+}
+
+export interface CalendarVO {
+  days: CalendarDay[]
 }
 
 // 视频元数据
@@ -86,6 +100,10 @@ export interface ArticleDetail extends ArticleVO {
 export interface Tag {
   id: number
   name: string
+  parentId?: number | null
+  level?: number
+  articleCount?: number
+  children?: Tag[]
 }
 
 // 文章列表查询参数

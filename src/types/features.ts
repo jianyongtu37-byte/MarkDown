@@ -83,6 +83,7 @@ export interface NotificationVO {
   relatedArticleId?: number
   relatedUserId?: number
   relatedUserName?: string
+  commentId?: number
   isRead: number
   createTime: string
 }

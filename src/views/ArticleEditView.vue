@@ -5,29 +5,99 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Lock, Upload, MagicStick, InfoFilled, Collection } from '@element-plus/icons-vue'
 import { articleApi, deepseekApi, categoryApi, tagApi, imageApi, seriesApi } from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { useLayout } from '@/composables/useLayout'
 import type { ArticleCreateDTO, ArticleVO, VideoMeta, Timestamp } from '@/types/article'
 import type { ArticleSeriesVO } from '@/types/features'
 import type { PolishRequest, GenerateTitleRequest } from '@/types/ai'
 import type { Category } from '@/types/category'
+import type { TitleSearchResult } from '@/types/wikiLink'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import { parseTimestamps, secondsToLabel } from '@/utils/timestampParser'
 import { useAiSummary, getAiStatusText, getAiStatusType, getAiStatusIcon } from '@/composables/useAiStatus'
+import { wikiLinkApi } from '@/utils/api'
 import VideoPlayer from '@/components/video/VideoPlayer.vue'
 import TimestampNav from '@/components/video/TimestampNav.vue'
 import VideoBindPanel from '@/components/editor/VideoBindPanel.vue'
 import AITagSuggestion from '@/components/article/AITagSuggestion.vue'
 import VersionHistory from '@/components/article/VersionHistory.vue'
 import ArticleImportDialog from '@/components/article/ArticleImportDialog.vue'
+import TemplateSelector from '@/components/article/TemplateSelector.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 const { isMobile } = useLayout()
 
 // 编辑器是否已初始化完成（用于区分用户编辑和初始化触发的content变化）
 const isEditorReady = ref(false)
+
+// Wiki 链接自动补全
+const wikiSuggestions = ref<TitleSearchResult[]>([])
+const showWikiSuggestions = ref(false)
+let wikiDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const handleWikiAutocomplete = (value: string) => {
+  if (!vditor.value) return
+  const textarea = (vditor.value as any).vditor?.editor?.element as HTMLTextAreaElement | undefined
+  if (!textarea) return
+
+  const cursorPos = textarea.selectionStart || 0
+  const textBefore = value.substring(0, cursorPos)
+  const bracketMatch = textBefore.match(/\[\[([^\]\]\n]*)$/)
+
+  if (bracketMatch) {
+    const keyword = bracketMatch[1] || ''
+    if (wikiDebounceTimer) clearTimeout(wikiDebounceTimer)
+    wikiDebounceTimer = setTimeout(async () => {
+      try {
+        const results = keyword.trim()
+          ? await wikiLinkApi.searchTitles(keyword.trim(), 8)
+          : await wikiLinkApi.searchTitles('', 8)
+        wikiSuggestions.value = results
+        showWikiSuggestions.value = results.length > 0
+      } catch {
+        wikiSuggestions.value = []
+        showWikiSuggestions.value = false
+      }
+    }, 150)
+  } else {
+    wikiSuggestions.value = []
+    showWikiSuggestions.value = false
+  }
+}
+
+const insertWikiLinkAtCursor = (title: string) => {
+  if (!vditor.value) return
+  const textarea = (vditor.value as any).vditor?.editor?.element as HTMLTextAreaElement | undefined
+  if (!textarea) return
+
+  const value = textarea.value || ''
+  const cursorPos = textarea.selectionStart || 0
+  const textBefore = value.substring(0, cursorPos)
+  const bracketIdx = textBefore.lastIndexOf('[[')
+  if (bracketIdx === -1) return
+
+  const textAfter = value.substring(cursorPos)
+  const closeIdx = textAfter.indexOf(']]')
+  const hasClose = closeIdx !== -1
+  const replaceEnd = hasClose ? cursorPos + closeIdx + 2 : cursorPos
+  const replacement = `[[${title}]]`
+  const newValue = value.substring(0, bracketIdx) + replacement + value.substring(replaceEnd)
+  const newCursorPos = bracketIdx + replacement.length
+
+  vditor.value.setValue(newValue)
+  setTimeout(() => {
+    vditor.value?.focus()
+    const ta = (vditor.value as any)?.vditor?.editor?.element as HTMLTextAreaElement | undefined
+    if (ta) ta.setSelectionRange(newCursorPos, newCursorPos)
+  }, 50)
+
+  wikiSuggestions.value = []
+  showWikiSuggestions.value = false
+}
 
 // 数据
 const loading = ref(false)
@@ -309,7 +379,7 @@ const loadArticleDetail = async () => {
 
     if (article) {
       // 【核心越权拦截】
-      if (article.userId !== user.value?.id) {
+      if (article.username !== user.value?.username) {
         ElMessage.error('您没有权限编辑此文章')
         router.replace('/articles') // 踢回列表页
         return
@@ -578,6 +648,15 @@ const handleImportSuccess = (ids: number[]) => {
   router.push('/my-articles')
 }
 
+// 从模板创建
+const showTemplateSelector = ref(false)
+const handleTemplateSelect = (content: string) => {
+  if (vditor.value) {
+    vditor.value.setValue(content)
+    form.value.content = content
+  }
+}
+
 
 // 版本控制
 const showVersionHistory = ref(false)
@@ -730,6 +809,8 @@ const initVditor = async () => {
     vditor.value = new Vditor('vditor', {
     height: isMobile.value ? 360 : 500,
     mode: 'sv', // 分屏预览模式
+    theme: themeStore.isDark ? 'dark' : 'classic',
+    cdn: '/vditor', // 本地 lute.min.js，避免 CDN 被浏览器追踪防护拦截
     cache: {
       enable: false // 开发阶段建议先关闭本地缓存
     },
@@ -737,6 +818,8 @@ const initVditor = async () => {
     input: (value: string) => {
       // 实时同步内容到表单
       form.value.content = value
+      // Wiki 链接自动补全
+      handleWikiAutocomplete(value)
     },
     upload: {
       // 使用自定义上传函数，通过后端的 multipart/form-data 接口上传
@@ -884,17 +967,25 @@ const handleAiTagSelect = (tag: string) => {
   }
 }
 
+// 运行时切换 Vditor 暗色模式
+watch(() => themeStore.isDark, (isDark) => {
+  const el = document.querySelector('.vditor')
+  if (el) el.classList.toggle('vditor--dark', isDark)
+})
+
 // 组件销毁时清理 Vditor 实例
 onBeforeUnmount(() => {
   if (vditor.value) {
-    vditor.value.destroy()
+    try {
+      vditor.value.destroy()
+    } catch {}
     vditor.value = null
   }
 })
 </script>
 
 <template>
-  <div class="h-screen flex overflow-hidden bg-[#f0f4f8]">
+  <div class="h-screen flex overflow-hidden bg-[var(--color-bg-primary)]">
 
     <!-- LEFT SIDEBAR — all tools consolidated here -->
     <aside class="w-72 bg-white border-r border-slate-200 flex flex-col h-full flex-shrink-0 z-20 shadow-sm relative">
@@ -920,6 +1011,14 @@ onBeforeUnmount(() => {
           class="w-full py-2.5 rounded-xl border border-orange-500 text-orange-500 font-medium text-sm hover:bg-orange-50 transition-colors flex items-center justify-center gap-2"
         >
           <el-icon><Upload /></el-icon> 导入文章
+        </button>
+
+        <button
+          v-if="!isEditMode"
+          @click="showTemplateSelector = true"
+          class="w-full py-2.5 rounded-xl border border-green-500 text-green-600 font-medium text-sm hover:bg-green-50 transition-colors flex items-center justify-center gap-2"
+        >
+          <el-icon><Collection /></el-icon> 从模板创建
         </button>
 
         <button
@@ -1109,7 +1208,7 @@ onBeforeUnmount(() => {
 
     <!-- MAIN CONTENT — full width editor -->
     <main class="flex-1 h-full overflow-y-auto custom-scrollbar p-6 lg:p-8 relative">
-      <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
+
 
       <div class="max-w-[1200px] mx-auto relative z-10 pb-12">
 
@@ -1218,6 +1317,25 @@ onBeforeUnmount(() => {
 
               <div class="relative">
                 <div id="vditor" class="border border-slate-200 rounded-xl overflow-hidden mb-3"></div>
+                <!-- Wiki 链接自动补全下拉 -->
+                <Transition name="wiki-fade">
+                  <div
+                    v-if="showWikiSuggestions && wikiSuggestions.length > 0"
+                    class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto"
+                    style="top: 100%; margin-top: 4px;"
+                  >
+                    <div class="px-3 py-2 text-xs text-slate-400 border-b border-slate-100">Wiki 链接补全</div>
+                    <div
+                      v-for="s in wikiSuggestions"
+                      :key="s.id"
+                      class="flex items-center gap-3 px-4 py-2.5 hover:bg-orange-50 cursor-pointer transition-colors duration-100"
+                      @mousedown.prevent="insertWikiLinkAtCursor(s.title)"
+                    >
+                      <span class="text-sm text-slate-700 flex-1 truncate">{{ s.title }}</span>
+                      <span class="text-xs text-slate-400">[[ ]]</span>
+                    </div>
+                  </div>
+                </Transition>
                 <div class="text-right text-xs text-slate-400 px-3 py-2 bg-slate-50 rounded border border-slate-200">
                   <span>{{ form.content.length }} 字符</span>
                 </div>
@@ -1244,6 +1362,7 @@ onBeforeUnmount(() => {
     </el-dialog>
 
     <ArticleImportDialog ref="importDialogRef" @success="handleImportSuccess" />
+    <TemplateSelector v-model="showTemplateSelector" @select="handleTemplateSelect" />
   </div>
 </template>
 
@@ -1261,45 +1380,6 @@ onBeforeUnmount(() => {
 }
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background: #94a3b8;
-}
-
-/* 其他你在用的工具类样式 */
-.btn-glass-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 9999px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid #e2e8f0;
-  color: #475569;
-  background: #ffffff;
-  transition: all 0.2s ease;
-}
-.btn-glass-pill:hover {
-  background: #f8fafc;
-  color: #f54e00;
-  border-color: #f54e00;
-}
-.btn-glass-ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 9999px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid transparent;
-  color: #64748b;
-  background: transparent;
-  transition: all 0.2s ease;
-}
-.btn-glass-ghost:hover {
-  background: #f1f5f9;
-  color: #334155;
 }
 
 /* 隐藏 Vditor 代码块快捷复制按钮 */
@@ -1327,5 +1407,42 @@ onBeforeUnmount(() => {
     min-height: 32px;
     padding: 4px;
   }
+}
+
+/* Wiki 链接补全动画 */
+.wiki-fade-enter-active,
+.wiki-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.wiki-fade-enter-from,
+.wiki-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* Dark mode */
+[data-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+[data-theme="dark"] .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: #64748b;
+}
+[data-theme="dark"] .btn-glass-pill {
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.6);
+}
+[data-theme="dark"] .btn-glass-pill:hover {
+  background: rgba(30, 41, 59, 0.85);
+  color: #fb923c;
+  border-color: rgba(251, 146, 60, 0.4);
+}
+[data-theme="dark"] .btn-glass-ghost {
+  color: #94a3b8;
+  border-color: transparent;
+}
+[data-theme="dark"] .btn-glass-ghost:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
 }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { renderMarkdownWithVditor } from '@/utils/markdown'
+import { useTypewriter } from '@/composables/useTypewriter'
 import RAGSourceCard from './RAGSourceCard.vue'
 
 interface Source {
@@ -32,15 +33,50 @@ const emit = defineEmits<{
 
 const isUser = computed(() => props.message.role === 'user')
 
-// 轻量级 Markdown 渲染（流式阶段使用，避免 Vditor 高频调用）
-const renderedContent = computed(() => {
-  let text = props.message.content || ''
-  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-  text = text.replace(/`([^`]+)`/g, '<code class="rag-inline-code">$1</code>')
-  text = text.replace(/\n/g, '<br>')
-  return text
-})
+// 打字机动画：流式阶段逐字输出
+const tw = useTypewriter({ speed: 40 })
+const wasStreaming = ref(false)
+
+// 将文本转为轻量 HTML（与打字机输出配合）
+function lightRender(text: string): string {
+  if (!text) return ''
+  let html = text
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/`([^`]+)`/g, '<code class="rag-inline-code">$1</code>')
+  html = html.replace(/\n/g, '<br>')
+  return html
+}
+
+// 打字机输出的 HTML（流式阶段使用）
+const typewriterHtml = computed(() => lightRender(tw.displayed.value))
+
+// 完整内容的轻量渲染（历史消息回退）
+const renderedContent = computed(() => lightRender(props.message.content || ''))
+
+// 内容变化时喂给打字机
+watch(
+  () => props.message.content,
+  (content) => {
+    if (!content) {
+      tw.reset()
+      return
+    }
+    tw.target.value = content
+  }
+)
+
+// 流式状态切换
+watch(
+  () => props.message.loading,
+  (loading) => {
+    if (loading) {
+      wasStreaming.value = true
+    } else if (wasStreaming.value) {
+      tw.flush()
+    }
+  }
+)
 
 // Vditor 高质量渲染结果（流式结束后切换）
 const vditorHtml = ref('')
@@ -108,7 +144,8 @@ watch(
         <div v-if="message.loading && !message.content" class="rag-typing">
           <span class="dot"></span><span class="dot"></span><span class="dot"></span>
         </div>
-        <div v-else v-html="vditorHtml || renderedContent"></div>
+        <!-- 流式阶段：打字机动画输出；完成后切换 Vditor 渲染 -->
+        <div v-else v-html="vditorHtml || (wasStreaming ? typewriterHtml : renderedContent)"></div>
       </div>
     </div>
   </div>
@@ -239,5 +276,24 @@ watch(
 @keyframes typing {
   0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
   30% { opacity: 1; transform: scale(1); }
+}
+
+/* Dark mode */
+[data-theme="dark"] .msg-ai {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+}
+[data-theme="dark"] .msg-ai :deep(h1),
+[data-theme="dark"] .msg-ai :deep(h2),
+[data-theme="dark"] .msg-ai :deep(h3),
+[data-theme="dark"] .msg-ai :deep(strong) {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .msg-ai :deep(code) {
+  background: rgba(148, 163, 184, 0.15);
+}
+[data-theme="dark"] .typing-dot {
+  background: #64748b;
 }
 </style>

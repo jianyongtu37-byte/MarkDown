@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, watch } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRagStore } from '@/stores/rag'
 import { renderMarkdownWithVditor } from '@/utils/markdown'
+import { useTypewriter } from '@/composables/useTypewriter'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import RAGAnalysisPanel from '@/components/rag/RAGAnalysisPanel.vue'
 import RAGInput from '@/components/rag/RAGInput.vue'
@@ -16,15 +17,45 @@ const panelMode = ref<'chat' | 'analysis'>('chat')
 const sidebarOpen = ref(true)
 const messagesRef = ref<HTMLDivElement | null>(null)
 const inputText = ref('')
+const sessionSearch = ref('')  // UX-9: 会话搜索
 
 // Vditor 渲染缓存：content -> renderedHtml
 const renderedCache = ref<Map<string, string>>(new Map())
 
-// 异步渲染单条消息并缓存
+// UX-4: 已评价的消息 ID 集合
+const ratedMessages = ref<Set<string>>(new Set())
+
+// UX-6: 最新一条 AI 消息的相关问题推荐
+const latestRelatedQuestions = ref<string[]>([])
+
+// 打字机动画：逐字输出流式内容，绕过 Pinia store 的嵌套响应式延迟
+const typewriter = useTypewriter({ speed: 45 })
+
+// UX-3: 解析内联引用 [n] 为正则
+const citationRegex = /\[(\d+)\]/g
+
+// UX-9: 会话搜索过滤
+const filteredSessions = computed(() => {
+  if (!sessionSearch.value.trim()) return ragStore.sortedSessions
+  const q = sessionSearch.value.toLowerCase()
+  return ragStore.sortedSessions.filter(s => s.title.toLowerCase().includes(q))
+})
+
+// 异步渲染单条消息并缓存（LRU 上限 60 条，防止内存泄漏）
+const MAX_CACHE_SIZE = 60
 async function renderWithVditor(content: string) {
   if (!content || renderedCache.value.has(content)) return
-  const html = await renderMarkdownWithVditor(content)
-  renderedCache.value.set(content, html)
+  try {
+    const html = await renderMarkdownWithVditor(content)
+    if (!html) return  // Vditor 渲染失败时保留简单 markdown 渲染
+    if (renderedCache.value.size >= MAX_CACHE_SIZE) {
+      const oldest = renderedCache.value.keys().next().value
+      if (oldest) renderedCache.value.delete(oldest)
+    }
+    renderedCache.value.set(content, html)
+  } catch {
+    // Vditor 异常时保留简单 markdown 渲染
+  }
 }
 
 // 流式结束后，将最后一条 AI 消息重新用 Vditor 渲染
@@ -60,37 +91,60 @@ const scrollToBottom = async () => {
   }
 }
 
+// UX-1: 停止生成
+const handleStop = () => {
+  typewriter.flush()
+  ragStore.abortStreaming()
+}
+
 // 发送问题（流式 SSE）
 const handleSend = async (question: string) => {
   if (ragStore.isLoading || ragStore.isStreaming) return
 
+  // 在一切异步操作之前捕获当前会话 ID，避免流式过程中
+  // currentSessionId 被其他操作（如切换会话）改变导致消息发送到错误会话
+  let sessionId = ragStore.currentSessionId || ''
+
   ragStore.addUserMessage(question)
-  ragStore.startStreaming()
+  typewriter.reset()
+  typewriter.start()
   await scrollToBottom()
 
   let fullAnswer = ''
   let sources: RAGSource[] = []
   let confidence = 0
-  let sessionId = ragStore.currentSessionId || ''
   let queryRewritten = ''
   let hasError = false
 
-  try {
-    const { streamRAG } = await import('@/composables/useRagStream')
+  // UX-1: 使用 createRagStream 获取 abort 能力
+  const { streamRAG } = await import('@/composables/useRagStream')
+  const controller = new AbortController()
 
+  ragStore.startStreaming(controller)
+  latestRelatedQuestions.value = []
+
+  try {
     await streamRAG({
       url: '/rag/ask/stream',
       body: {
         question,
-        session_id: ragStore.currentSessionId || undefined,
+        session_id: sessionId || undefined,
       },
+      signal: controller.signal,
       onContent: (chunk) => {
         fullAnswer += chunk
+        typewriter.target.value = fullAnswer
         ragStore.updateStreamingMessage(fullAnswer)
         scrollToBottom()
       },
+      // UX-2: 渐进式状态 — 收到来源时更新提示
       onSources: (s) => {
         sources = s
+        if (s.length > 0) {
+          ragStore.updateStreamingStatus(`已找到 ${s.length} 个相关来源，正在生成回答…`)
+        } else {
+          ragStore.updateStreamingStatus('正在搜索知识库…')
+        }
       },
       onSessionId: (id) => {
         sessionId = id
@@ -98,8 +152,17 @@ const handleSend = async (question: string) => {
       onQueryRewritten: (q) => {
         queryRewritten = q
       },
+      // UX-2: 渐进式状态更新 — 在检索前/检索后收到状态事件
+      onStatus: (status) => {
+        ragStore.updateStreamingStatus(status)
+      },
+      // UX-6: 相关问题推荐
+      onRelatedQuestions: (questions) => {
+        latestRelatedQuestions.value = questions
+      },
       onError: (msg) => {
         fullAnswer += `\n\n❌ ${msg}`
+        typewriter.target.value = fullAnswer
         ragStore.updateStreamingMessage(fullAnswer)
         scrollToBottom()
       },
@@ -108,22 +171,80 @@ const handleSend = async (question: string) => {
       },
     })
   } catch (err: any) {
+    if (err.name === 'AbortError') {
+      // UX-1: 用户主动停止，abortStreaming 已处理
+      return
+    }
     console.error('RAG stream error:', err)
     hasError = true
     fullAnswer = `❌ 请求失败：${err.message || '网络错误'}`
+    typewriter.target.value = fullAnswer
     ragStore.updateStreamingMessage(fullAnswer)
   } finally {
-    ragStore.finishStreaming({
-      answer: fullAnswer,
-      sources,
-      sessionId,
-      confidence,
-      queryRewritten,
-    })
+    typewriter.flush()
+    if (!controller.signal.aborted) {
+      ragStore.finishStreaming({
+        answer: fullAnswer,
+        sources,
+        sessionId,
+        confidence,
+        queryRewritten,
+      })
 
-    if (!hasError) {
-      await ragStore.fetchSessions()
+      // SSE 未收到任何内容时，回退到从后端加载历史消息
+      // （Python 已将回答独立保存到会话历史，刷新能显示就是这个原因）
+      if (!fullAnswer && !hasError && sessionId) {
+        console.warn('[RAG] SSE 未收到内容，尝试从后端历史加载…')
+        await ragStore.fetchHistory(sessionId)
+      }
+
+      if (!hasError) {
+        await ragStore.fetchSessions()
+      }
     }
+  }
+}
+
+// UX-7: 重新生成回答
+const handleRegenerate = async (aiMsgIndex: number) => {
+  if (ragStore.isStreaming) return
+  const userInfo = ragStore.getPreviousUserMessage(aiMsgIndex)
+  if (!userInfo) return
+  // 先截断，再等 Vue 完成 DOM 更新，然后发送新请求
+  ragStore.truncateMessagesFrom(aiMsgIndex)
+  await nextTick()
+  await handleSend(userInfo.content)
+}
+
+// UX-4: 回答反馈（点赞/点踩）
+const handleFeedback = async (msgIndex: number, rating: 1 | -1) => {
+  const msg = ragStore.messages[msgIndex]
+  if (!msg?.id) return
+  ratedMessages.value.add(msg.id)
+
+  if (rating === -1) {
+    try {
+      await ElMessageBox.prompt('请告诉我们哪里不满意（可选）', '反馈', {
+        confirmButtonText: '提交',
+        cancelButtonText: '跳过',
+        inputType: 'textarea',
+        inputPlaceholder: '回答哪里有问题？',
+      })
+    } catch {
+      // 用户取消
+    }
+  }
+
+  try {
+    const { ragApi } = await import('@/utils/api')
+    await ragApi.submitFeedback({
+      session_id: ragStore.currentSessionId ?? undefined,
+      message_id: msg.id,
+      rating,
+    })
+    ElMessage.success(rating === 1 ? '感谢你的反馈！' : '感谢反馈，我们会改进')
+  } catch {
+    // 后端未实现时静默失败
   }
 }
 
@@ -141,7 +262,6 @@ const handleCopy = async (content: string) => {
 const handleEdit = async (content: string) => {
   inputText.value = content
   await nextTick()
-  // 聚焦输入框
   const inputEl = document.querySelector('.input-field') as HTMLInputElement | null
   inputEl?.focus()
 }
@@ -154,6 +274,8 @@ const handleNewSession = () => {
 
 // 切换会话
 const handleSwitchSession = async (sessionId: string) => {
+  if (ragStore.isStreaming) return
+  sessionSearch.value = ''
   await ragStore.switchSession(sessionId)
   await scrollToBottom()
 }
@@ -173,9 +295,26 @@ const handleDeleteSession = async (sessionId: string, e: Event) => {
   }
 }
 
-// 点击来源卡片
-const handleSourceClick = (source: RAGSource) => {
-  router.push(`/articles/${source.articleId}`)
+// 点击来源卡片 / 分析面板文章链接
+const handleSourceClick = (source: RAGSource | number) => {
+  const id = typeof source === 'number' ? source : source.articleId
+  if (id) router.push(`/articles/${id}`)
+}
+
+// UX-5 阶段二: 点击内联引用 [n] 滚动到对应的来源卡片并高亮
+function handleCitationClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  if (!target.classList.contains('citation-ref')) return
+
+  const sourceIndex = target.getAttribute('data-source-index')
+  if (!sourceIndex) return
+
+  const sourceEl = document.querySelector(`.source-card[data-source-index="${sourceIndex}"]`)
+  if (sourceEl) {
+    sourceEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    sourceEl.classList.add('source-highlight')
+    setTimeout(() => sourceEl.classList.remove('source-highlight'), 2000)
+  }
 }
 
 // 格式化时间
@@ -198,46 +337,158 @@ const previewText = (content: string) => {
 // 判断是否为"知识库中未找到"的回复（后端固定回复 + 无来源）
 const isNoSourceReply = (msg: any) => {
   if (!msg.sources || msg.sources.length === 0) {
-    // 只有内容为空或为后端固定"未找到"消息时才显示检索反馈
     const content = msg.content?.trim() || ''
     if (!content || content === '在您的知识库中未找到相关信息。') return true
   }
   return false
 }
 
-// 渲染 Markdown
+// UX-5: 将回答中的 [n] 引用替换为可点击的 superscript 链接
+function renderCitations(html: string, sources?: RAGSource[]): string {
+  if (!sources?.length) return html
+  return html.replace(citationRegex, (_match, num) => {
+    const idx = parseInt(num) - 1
+    const src = sources[idx]
+    if (src) {
+      return `<sup class="citation-ref" title="${escapeHtml(src.articleTitle)}" data-source-index="${idx}">[${num}]</sup>`
+    }
+    return `[${num}]`
+  })
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// UX-3: 增强版 Markdown 渲染（流式期间使用，支持代码块/表格/引用/链接）
+// 简单缓存：Vue re-render 相同内容时避免重复执行正则流水线
+let _mdCacheKey = ''
+let _mdCacheValue = ''
 function renderMarkdown(text: string): string {
   if (!text) return ''
-  return text
+  if (text === _mdCacheKey) return _mdCacheValue
+  // 保护内联代码和代码块，避免被后续正则破坏
+  const codeBlocks: string[] = []
+  let html = text
+    .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      codeBlocks.push(`<pre><code class="language-${lang}">${escapeHtml(code.trim())}</code></pre>`)
+      return `%%CODEBLOCK_${codeBlocks.length - 1}%%`
+    })
+    .replace(/`([^`]+)`/g, (_, code) => {
+      codeBlocks.push(`<code>${escapeHtml(code)}</code>`)
+      return `%%CODEBLOCK_${codeBlocks.length - 1}%%`
+    })
+
+  // 转义未被代码块保护的 HTML（XSS 防护，& 必须先转义）
+  html = html
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^\* (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-    .replace(/\n/g, '<br>')
+
+  // 表格: | col | col | 行
+  html = html.replace(/^\|(.+)\|\s*$/gm, (line) => {
+    const cells = line.split('|').filter(c => c.trim()).map(c => c.trim())
+    const isHeader = /^[-:\s|]+$/.test(line.replace(/\|/g, '').trim())
+    if (isHeader) return '%%TABLE_SEP%%'
+    return `<tr>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`
+  })
+  // 将第一行 tr 中的 td 替换为 th（在表格组装前处理）
+  html = html.replace(/<tr><td>/g, '<tr><th>').replace(/<\/td>/g, (m, offset, str) => {
+    return offset < str.indexOf('</tr>') ? '</th>' : '</td>'
+  })
+  // 组装表格：表头行 + 分隔符 + 数据行 → <table>
+  html = html.replace(/(<tr>[\s\S]*?<\/tr>)\s*%%TABLE_SEP%%\s*(<tr>[\s\S]*?<\/tr>)/g, '<table><thead>$1</thead><tbody>$2</tbody></table>')
+  // 剩余未被包裹的 <tr> 行（多行数据表）→ 自动包裹
+  html = html.replace(/<tr>/g, (m, offset) => {
+    if (!html.substring(0, offset).includes('<table>')) return '<table><tbody>' + m
+    return m
+  })
+  // 确保表格闭合
+  const openTables = (html.match(/<table>/g) || []).length
+  const closeTables = (html.match(/<\/table>/g) || []).length
+  for (let i = closeTables; i < openTables; i++) html += '</tbody></table>'
+
+  // Blockquotes (match > at line start, after code blocks have been extracted)
+  html = html.replace(/^&gt;\s?(.+)$/gm, '<blockquote>$1</blockquote>')
+  html = html.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>')
+  html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n')
+
+  // 水平线
+  html = html.replace(/^(---|\*\*\*)\s*$/gm, '<hr>')
+
+  // 图片
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%">')
+
+  // 链接
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+
+  // 粗体/斜体/删除线
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>')
+
+  // 标题
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+
+  // 有序列表
+  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+  // 无序列表
+  html = html.replace(/^[\*\-\+]\s+(.+)$/gm, '<li>$1</li>')
+
+  // 换行
+  html = html.replace(/\n\n/g, '</p><p>')
+  html = html.replace(/\n/g, '<br>')
+
+  // 恢复代码块
+  html = html.replace(/%%CODEBLOCK_(\d+)%%/g, (_, i) => codeBlocks[parseInt(i)] || '')
+
+  // 包裹段落
+  if (!html.startsWith('<')) html = '<p>' + html
+  if (!html.endsWith('>')) html = html + '</p>'
+
+  _mdCacheKey = text
+  _mdCacheValue = html
+  return html
+}
+
+// UX-5: 渲染 AI 回答 — 流式期间用 renderMarkdown，流完成后用 Vditor 缓存
+function renderAiContent(msg: any): string {
+  const vditorHtml = renderedCache.value.get(msg.content)
+  if (vditorHtml) {
+    return renderCitations(vditorHtml, msg.sources)
+  }
+  const html = renderMarkdown(msg.content)
+  return renderCitations(html, msg.sources)
+}
+
+// UX-6: 点击推荐问题
+const handleRelatedQuestion = (q: string) => {
+  handleSend(q)
 }
 
 onMounted(async () => {
   await Promise.all([ragStore.fetchSessions(), ragStore.fetchIndexStatus()])
-  // 如果当前选中的会话已不存在（过期/被删），清除它
   if (ragStore.currentSessionId) {
     const exists = ragStore.sessions.some((s) => s.sessionId === ragStore.currentSessionId)
     if (!exists) {
       ragStore.currentSessionId = null
     }
   }
-  // 自动选中最近的会话（如果当前没有选中任何会话）
   if (!ragStore.currentSessionId && ragStore.sortedSessions.length > 0) {
     const latest = ragStore.sortedSessions[0]
     if (latest) {
       await ragStore.switchSession(latest.sessionId)
     }
+  }
+})
+
+// 组件卸载时清理：中断进行中的 SSE 流，释放连接
+onUnmounted(() => {
+  if (ragStore.isStreaming) {
+    ragStore.abortStreaming()
   }
 })
 </script>
@@ -278,8 +529,17 @@ onMounted(async () => {
 
         <!-- 历史会话列表 -->
         <div class="session-list">
+          <!-- UX-9: 会话搜索 -->
+          <div class="session-search" v-if="ragStore.sortedSessions.length > 5">
+            <input
+              v-model="sessionSearch"
+              type="text"
+              placeholder="搜索会话…"
+              class="session-search-input"
+            />
+          </div>
           <div
-            v-for="session in ragStore.sortedSessions"
+            v-for="session in filteredSessions"
             :key="session.sessionId"
             class="session-card"
             :class="{ active: session.sessionId === ragStore.currentSessionId }"
@@ -309,7 +569,10 @@ onMounted(async () => {
             <p class="text-xs text-gray-400 mt-1">({{ session.messageCount }}条消息)</p>
           </div>
 
-          <div v-if="ragStore.sortedSessions.length === 0" class="empty-sessions">
+          <div v-if="filteredSessions.length === 0 && ragStore.sortedSessions.length > 0" class="empty-sessions">
+            未找到匹配的会话
+          </div>
+          <div v-else-if="ragStore.sortedSessions.length === 0" class="empty-sessions">
             暂无历史会话
           </div>
         </div>
@@ -318,10 +581,6 @@ onMounted(async () => {
 
       <!-- 右侧主聊天区 -->
       <main class="rag-main">
-        <!-- 背景装饰 -->
-        <div class="bg-deco bg-blob-1"></div>
-        <div class="bg-deco bg-blob-2"></div>
-        <div class="bg-deco bg-pattern"></div>
 
         <!-- 聊天区顶部工具栏 -->
         <div class="chat-toolbar">
@@ -358,7 +617,7 @@ onMounted(async () => {
         <!-- 内容区 -->
         <div class="chat-content">
           <!-- 分析面板 -->
-          <RAGAnalysisPanel v-if="panelMode === 'analysis'" />
+          <RAGAnalysisPanel v-if="panelMode === 'analysis'" @navigate="handleSourceClick" />
 
           <!-- 聊天模式 -->
           <template v-else>
@@ -426,17 +685,29 @@ onMounted(async () => {
                       </div>
                     </div>
                     <div class="feedback-answer">
-                      <div class="md-body" v-html="renderedCache.get(msg.content) || renderMarkdown(msg.content)" />
+                      <div class="md-body" v-html="renderAiContent(msg)" />
                     </div>
                   </div>
 
                   <!-- 有来源时显示正常气泡 -->
-                  <div v-else class="bubble-ai">
+                  <div v-else class="bubble-ai" @click="handleCitationClick">
                     <div v-if="ragStore.isStreaming && !msg.content" class="typing-dots">
                       <span /><span /><span />
                     </div>
                     <template v-else>
-                      <div class="md-body" v-html="renderedCache.get(msg.content) || renderMarkdown(msg.content)" />
+                      <!-- UX-3/UX-5: 增强 Markdown 渲染 + 内联引用
+                          流式传输期间使用打字机动画逐字输出，
+                          绕过 Pinia store 嵌套响应式的 Proxy 链路延迟 -->
+                      <div
+                        v-if="ragStore.isStreaming && msg.loading"
+                        class="md-body"
+                        v-html="renderMarkdown(typewriter.displayed.value)"
+                      />
+                      <div
+                        v-else
+                        class="md-body"
+                        v-html="renderAiContent(msg) || (typewriter.displayed.value ? renderMarkdown(typewriter.displayed.value) : '')"
+                      />
                       <!-- 来源列表 -->
                       <div v-if="msg.sources && msg.sources.length > 0" class="sources-section">
                         <div class="sources-title">📚 参考来源</div>
@@ -445,6 +716,7 @@ onMounted(async () => {
                             v-for="(src, i) in msg.sources"
                             :key="i"
                             class="source-card"
+                            :data-source-index="i + 1"
                             @click="handleSourceClick(src)"
                           >
                             <div class="source-left">
@@ -477,6 +749,29 @@ onMounted(async () => {
                         </div>
                         <span class="confidence-value">{{ Math.round(msg.confidence * 100) }}%</span>
                       </div>
+                      <!-- UX-4: 反馈按钮 + UX-7: 重新生成 -->
+                      <div v-if="!msg.loading" class="ai-actions">
+                        <button class="ai-action-btn" :class="{ active: ratedMessages.has(msg.id!) }" title="赞同" @click="handleFeedback(idx, 1)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                          </svg>
+                        </button>
+                        <button class="ai-action-btn" title="不赞同" @click="handleFeedback(idx, -1)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
+                          </svg>
+                        </button>
+                        <button class="ai-action-btn" title="重新生成" @click="handleRegenerate(idx)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                        <button class="ai-action-btn" title="复制" @click="handleCopy(msg.content)">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
+                      </div>
                     </template>
                   </div>
                 </div>
@@ -488,7 +783,22 @@ onMounted(async () => {
                   <div class="typing-dots">
                     <span /><span /><span />
                   </div>
-                  <span class="text-xs text-gray-400 ml-2">正在思考...</span>
+                  <span class="text-xs text-gray-400 ml-2">{{ ragStore.streamingStatus || '正在思考…' }}</span>
+                </div>
+              </div>
+
+              <!-- UX-6: 相关问题推荐 -->
+              <div v-if="latestRelatedQuestions.length > 0 && !ragStore.isStreaming" class="related-questions-section">
+                <div class="related-title">相关追问</div>
+                <div class="related-tags">
+                  <button
+                    v-for="(q, i) in latestRelatedQuestions"
+                    :key="i"
+                    class="related-tag"
+                    @click="handleRelatedQuestion(q)"
+                  >
+                    {{ q }}
+                  </button>
                 </div>
               </div>
 
@@ -497,7 +807,7 @@ onMounted(async () => {
 
             <!-- 输入框 -->
             <div class="input-area">
-              <RAGInput v-model="inputText" :loading="ragStore.isStreaming" @send="handleSend" />
+              <RAGInput v-model="inputText" :loading="ragStore.isStreaming" @send="handleSend" @stop="handleStop" />
             </div>
           </template>
         </div>
@@ -621,40 +931,6 @@ onMounted(async () => {
   position: relative;
   background: transparent;
   min-width: 0;
-}
-
-/* 背景装饰 */
-.bg-deco {
-  position: absolute;
-  pointer-events: none;
-}
-
-.bg-blob-1 {
-  right: 0;
-  top: 25%;
-  width: 384px;
-  height: 384px;
-  background: rgba(251, 146, 60, 0.15);
-  border-radius: 9999px;
-  mix-blend-mode: multiply;
-  filter: blur(48px);
-}
-
-.bg-blob-2 {
-  left: 25%;
-  bottom: 25%;
-  width: 288px;
-  height: 288px;
-  background: rgba(251, 191, 36, 0.12);
-  border-radius: 9999px;
-  mix-blend-mode: multiply;
-  filter: blur(48px);
-}
-
-.bg-pattern {
-  inset: 0;
-  background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTMwIDBMNjAgMzBMMzAgNjBMMCAzMHoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2U1ZTdlYiIgc3Ryb2tlLXdpZHRoPSIwLjUiLz48L3N2Zz4=");
-  opacity: 0.2;
 }
 
 /* ========== 顶部工具栏 ========== */
@@ -1085,10 +1361,11 @@ onMounted(async () => {
   max-width: 896px;
 }
 
-/* ========== Markdown 渲染 ========== */
+/* ========== Markdown 渲染（增强版） ========== */
 .md-body :deep(h1),
 .md-body :deep(h2),
-.md-body :deep(h3) {
+.md-body :deep(h3),
+.md-body :deep(h4) {
   margin: 12px 0 6px;
   font-weight: 600;
   color: #1e293b;
@@ -1097,6 +1374,7 @@ onMounted(async () => {
 .md-body :deep(h1) { font-size: 18px; }
 .md-body :deep(h2) { font-size: 16px; }
 .md-body :deep(h3) { font-size: 14px; }
+.md-body :deep(h4) { font-size: 13px; }
 
 .md-body :deep(strong) {
   font-weight: 600;
@@ -1112,13 +1390,206 @@ onMounted(async () => {
   color: #e11d48;
 }
 
-.md-body :deep(ul) {
+.md-body :deep(pre) {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.md-body :deep(pre code) {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
+.md-body :deep(blockquote) {
+  border-left: 3px solid #ea580c;
+  padding: 8px 12px;
+  margin: 8px 0;
+  background: rgba(234, 88, 12, 0.05);
+  color: #64748b;
+}
+
+.md-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.md-body :deep(th) {
+  background: #f8fafc;
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.md-body :deep(td) {
+  padding: 6px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.md-body :deep(hr) {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 12px 0;
+}
+
+.md-body :deep(img) {
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.md-body :deep(a) {
+  color: #ea580c;
+  text-decoration: underline;
+}
+
+.md-body :deep(ul),
+.md-body :deep(ol) {
   margin: 6px 0;
   padding-left: 20px;
 }
 
 .md-body :deep(li) {
   margin: 3px 0;
+}
+
+.md-body :deep(del) {
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+
+/* ========== 内联引用标注 (UX-5) ========== */
+.md-body :deep(.citation-ref) {
+  color: #ea580c;
+  font-weight: 600;
+  font-size: 11px;
+  cursor: pointer;
+  vertical-align: super;
+  line-height: 0;
+  padding: 0 1px;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.md-body :deep(.citation-ref:hover) {
+  background: rgba(234, 88, 12, 0.15);
+}
+
+/* ========== 来源卡片高亮动画 (UX-5 阶段二) ========== */
+.source-card.source-highlight {
+  animation: source-pulse 0.6s ease-in-out 2;
+  box-shadow: 0 0 0 3px #ea580c;
+}
+@keyframes source-pulse {
+  0%, 100% { background: rgba(234, 88, 12, 0.05); }
+  50% { background: rgba(234, 88, 12, 0.15); }
+}
+
+/* ========== AI 操作按钮 (UX-4, UX-7) ========== */
+.ai-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.ai-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-action-btn:hover {
+  color: #64748b;
+  background: #f1f5f9;
+  border-color: #e5e7eb;
+}
+
+.ai-action-btn.active {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* ========== 会话搜索 (UX-9) ========== */
+.session-search {
+  padding: 0 4px 8px;
+}
+
+.session-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  color: #374151;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.session-search-input:focus {
+  border-color: #fb923c;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.session-search-input::placeholder {
+  color: #9ca3af;
+}
+
+/* ========== 相关问题推荐 (UX-6) ========== */
+.related-questions-section {
+  padding: 12px 0 0;
+  max-width: 672px;
+}
+
+.related-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.related-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.related-tag {
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(234, 88, 12, 0.2);
+  border-radius: 20px;
+  font-size: 13px;
+  color: #ea580c;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.related-tag:hover {
+  background: rgba(234, 88, 12, 0.1);
+  border-color: #ea580c;
+  transform: translateY(-1px);
 }
 
 /* ========== 自定义滚动条 ========== */
@@ -1165,5 +1636,127 @@ onMounted(async () => {
   .bubble-ai {
     max-width: 92%;
   }
+}
+
+/* ============================================================
+   DARK MODE
+   ============================================================ */
+[data-theme="dark"] .rag-sidebar {
+  background: linear-gradient(180deg, rgba(251, 146, 60, 0.06) 0%, rgba(251, 146, 60, 0.01) 100%);
+  border-right-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .sidebar-top {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .session-card:hover {
+  background: rgba(251, 146, 60, 0.08);
+}
+[data-theme="dark"] .session-card.active {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.18), rgba(251, 146, 60, 0.08));
+  border-color: rgba(251, 146, 60, 0.4);
+}
+[data-theme="dark"] .session-card.active .text-xs.text-gray-500 {
+  color: #fb923c;
+}
+[data-theme="dark"] .empty-sessions {
+  color: #64748b;
+}
+[data-theme="dark"] .btn-analysis {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+}
+[data-theme="dark"] .btn-analysis:hover {
+  background: rgba(30, 41, 59, 0.95);
+}
+[data-theme="dark"] .welcome-card h2 {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .welcome-card p {
+  color: #94a3b8;
+}
+[data-theme="dark"] .hint-card {
+  background: rgba(30, 41, 59, 0.65);
+  border-color: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+[data-theme="dark"] .hint-card:hover {
+  background: rgba(251, 146, 60, 0.1);
+  border-color: #fb923c;
+}
+[data-theme="dark"] .bubble-ai {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+}
+[data-theme="dark"] .loading-bubble {
+  color: #64748b;
+}
+[data-theme="dark"] .typing-dots span {
+  background: #64748b;
+}
+[data-theme="dark"] .retrieval-feedback {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+}
+[data-theme="dark"] .feedback-title {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .feedback-body {
+  background: rgba(148, 163, 184, 0.06);
+  border-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .feedback-doc-icon {
+  background: #475569;
+}
+[data-theme="dark"] .feedback-doc-corner {
+  background: #334155;
+}
+[data-theme="dark"] .feedback-answer {
+  border-top-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .sources-section {
+  border-top-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .sources-title {
+  color: #94a3b8;
+}
+[data-theme="dark"] .source-card {
+  background: rgba(148, 163, 184, 0.06);
+  border-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .source-card:hover {
+  background: rgba(251, 146, 60, 0.1);
+}
+[data-theme="dark"] .source-doc-icon {
+  background: #475569;
+}
+[data-theme="dark"] .source-doc-corner {
+  background: #334155;
+}
+[data-theme="dark"] .source-title {
+  color: #cbd5e1;
+}
+[data-theme="dark"] .source-preview {
+  color: #64748b;
+}
+[data-theme="dark"] .confidence-track {
+  background: rgba(148, 163, 184, 0.2);
+}
+[data-theme="dark"] .confidence-label {
+  color: #64748b;
+}
+[data-theme="dark"] .confidence-value {
+  color: #94a3b8;
+}
+[data-theme="dark"] .md-body :deep(h1),
+[data-theme="dark"] .md-body :deep(h2),
+[data-theme="dark"] .md-body :deep(h3),
+[data-theme="dark"] .md-body :deep(h4) {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .md-body :deep(strong) {
+  color: #e2e8f0;
 }
 </style>

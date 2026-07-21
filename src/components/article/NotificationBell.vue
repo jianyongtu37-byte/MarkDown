@@ -297,10 +297,11 @@ const handleClickNotification = async (notif: NotificationVO) => {
     }
   }
 
-  // 跳转到相关文章
+  // 跳转到相关文章（评论通知直接定位到评论）
   if (notif.relatedArticleId) {
     showPanel.value = false
-    router.push(`/articles/${notif.relatedArticleId}`)
+    const hash = notif.commentId ? `#comment-${notif.commentId}` : ''
+    router.push(`/articles/${notif.relatedArticleId}${hash}`)
   }
 }
 

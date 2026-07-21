@@ -130,6 +130,42 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/daily-notes',
+      name: 'daily-notes',
+      component: () => import('@/views/DailyNotesView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/flashcards',
+      name: 'flashcards-manage',
+      component: () => import('@/views/FlashcardManageView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/flashcards/review',
+      name: 'flashcards-review',
+      component: () => import('@/views/FlashcardReviewView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/templates',
+      name: 'templates',
+      component: () => import('@/views/TemplateManagementView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/stats',
+      name: 'writing-stats',
+      component: () => import('@/views/WritingStatsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/knowledge-graph',
+      name: 'knowledge-graph',
+      component: () => import('@/views/GlobalKnowledgeGraphView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/rag',
       name: 'rag-chat',
       component: () => import('@/views/RagChat.vue'),
@@ -184,7 +220,10 @@ function parseJwt(token: string) {
   try {
     const payload = token.split('.')[1]
     if (!payload) return null
-    return JSON.parse(atob(payload))
+    // JWT uses base64url encoding (- and _ instead of + and /), but atob only
+    // accepts standard base64. Convert before decoding.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(base64))
   } catch {
     return null
   }

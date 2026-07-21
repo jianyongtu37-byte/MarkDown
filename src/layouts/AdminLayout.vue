@@ -80,7 +80,6 @@ const goHome = () => router.push('/')
         :default-active="route.path"
         class="admin-menu"
         background-color="transparent"
-        text-color="#475569"
         active-text-color="#f54e00"
         @select="handleMenuSelect"
       >
@@ -139,6 +138,11 @@ const goHome = () => router.push('/')
   border-bottom: 1px solid rgba(255, 255, 255, 0.5);
 }
 
+[data-theme="dark"] .admin-mobile-topbar {
+  background: rgba(15, 23, 42, 0.88);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
 .admin-hamburger {
   width: 36px;
   height: 36px;
@@ -154,10 +158,22 @@ const goHome = () => router.push('/')
   color: #1e293b;
 }
 
+[data-theme="dark"] .admin-hamburger {
+  color: #94a3b8;
+}
+[data-theme="dark"] .admin-hamburger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
 .admin-mobile-title {
   font-size: 15px;
   font-weight: 600;
   color: #0f172a;
+}
+
+[data-theme="dark"] .admin-mobile-title {
+  color: #e2e8f0;
 }
 
 /* Sidebar overlay */
@@ -197,6 +213,11 @@ const goHome = () => router.push('/')
   transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+[data-theme="dark"] .admin-sidebar {
+  background: rgba(15, 23, 42, 0.85);
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+
 /* Mobile: sidebar hidden by default, slides in */
 @media (max-width: 1023px) {
   .admin-sidebar {
@@ -216,11 +237,19 @@ const goHome = () => router.push('/')
   border-bottom: 1px solid rgba(255, 255, 255, 0.40);
 }
 
+[data-theme="dark"] .admin-sidebar-header {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+
 .admin-logo-text {
   font-family: var(--font-gothic);
   font-size: 15px;
   font-weight: 600;
   color: #0f172a;
+}
+
+[data-theme="dark"] .admin-logo-text {
+  color: #e2e8f0;
 }
 
 .admin-menu {
@@ -248,12 +277,27 @@ const goHome = () => router.push('/')
   color: #f54e00;
 }
 
+[data-theme="dark"] .admin-menu .el-menu-item {
+  color: #94a3b8;
+}
+[data-theme="dark"] .admin-menu .el-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .admin-menu .el-menu-item.is-active {
+  background: rgba(251, 146, 60, 0.15);
+  color: #fb923c;
+}
+
 .admin-sidebar-footer {
   padding: 14px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.40);
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+[data-theme="dark"] .admin-sidebar-footer {
+  border-top-color: rgba(148, 163, 184, 0.12);
 }
 
 .admin-user-info {
@@ -271,6 +315,10 @@ const goHome = () => router.push('/')
   white-space: nowrap;
 }
 
+[data-theme="dark"] .admin-user-name {
+  color: #cbd5e1;
+}
+
 .admin-role-badge {
   font-size: 11px;
   color: #f54e00;
@@ -278,6 +326,10 @@ const goHome = () => router.push('/')
   padding: 2px 8px;
   border-radius: 10px;
   font-weight: 500;
+}
+
+[data-theme="dark"] .admin-role-badge {
+  background: rgba(251, 146, 60, 0.15);
 }
 
 .admin-main {

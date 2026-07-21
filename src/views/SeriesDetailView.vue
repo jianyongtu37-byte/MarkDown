@@ -243,10 +243,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="relative min-h-screen overflow-hidden">
-    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
-
-    <section class="relative z-10 py-16">
+  <div class="min-h-screen">
+    <section class="py-16">
       <div class="max-w-[1200px] mx-auto px-6">
         <!-- 返回 -->
         <div class="pt-6 mb-6">

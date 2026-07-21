@@ -6,7 +6,7 @@ import type { RAGMessage, RAGSession, RAGResponse, RAGIndexStatus, RAGSource } f
 export const useRagStore = defineStore('rag', () => {
   // 状态（currentSessionId 从 localStorage 恢复，避免刷新丢失）
   const sessions = ref<RAGSession[]>([])
-  const currentSessionId = ref<string | null>(localStorage.getItem('rag_session_id') || null)
+  const currentSessionId = ref<string | null>(sessionStorage.getItem('rag_session_id') || null)
   const messages = ref<RAGMessage[]>([])
   const isLoading = ref(false)
   const isStreaming = ref(false)
@@ -14,13 +14,17 @@ export const useRagStore = defineStore('rag', () => {
   const indexStatus = ref<RAGIndexStatus | null>(null)
   // 流式传输中点击"创建会话"时，延迟到流结束后再清理
   const pendingNewSession = ref(false)
+  // UX-1: 停止生成 — AbortController 引用
+  const abortController = ref<AbortController | null>(null)
+  // UX-2: 渐进式状态更新 — 流式等待阶段的提示文案
+  const streamingStatus = ref('')
 
-  // 持久化 currentSessionId 到 localStorage
+  // 持久化 currentSessionId 到 sessionStorage（刷新保留，关闭标签页后清空）
   watch(currentSessionId, (val) => {
     if (val) {
-      localStorage.setItem('rag_session_id', val)
+      sessionStorage.setItem('rag_session_id', val)
     } else {
-      localStorage.removeItem('rag_session_id')
+      sessionStorage.removeItem('rag_session_id')
     }
   })
 
@@ -85,9 +89,11 @@ export const useRagStore = defineStore('rag', () => {
     currentSessionId.value = null
     messages.value = []
     error.value = null
+    streamingStatus.value = ''
   }
 
   async function switchSession(sessionId: string) {
+    if (isStreaming.value) return
     currentSessionId.value = sessionId
     await fetchHistory(sessionId)
   }
@@ -176,8 +182,11 @@ export const useRagStore = defineStore('rag', () => {
     }
   }
 
-  function startStreaming() {
-    isStreaming.value = true
+  function startStreaming(controller?: AbortController) {
+    streamingStatus.value = ''
+    abortController.value = controller || null
+    // 先添加占位消息，再标记 streaming 状态，
+    // 避免模板在 isStreaming=true 但最后一条消息仍是 user 时闪现孤儿加载指示器
     messages.value = [...messages.value, {
       id: genMsgId(),
       role: 'assistant',
@@ -185,44 +194,96 @@ export const useRagStore = defineStore('rag', () => {
       timestamp: new Date().toISOString(),
       loading: true,
     }]
+    isStreaming.value = true
+  }
+
+  function updateStreamingStatus(status: string) {
+    streamingStatus.value = status
+  }
+
+  function abortStreaming() {
+    if (abortController.value) {
+      abortController.value.abort()
+      abortController.value = null
+    }
+    streamingStatus.value = ''
+    const idx = messages.value.length - 1
+    const lastMsg = messages.value[idx]
+    // 先更新消息，再结束 streaming，与 finishStreaming 保持一致
+    if (lastMsg && lastMsg.role === 'assistant') {
+      messages.value = [
+        ...messages.value.slice(0, idx),
+        { ...lastMsg, loading: false, content: lastMsg.content || '（已停止生成）' },
+      ]
+    }
+    isStreaming.value = false
+    if (pendingNewSession.value) {
+      pendingNewSession.value = false
+      currentSessionId.value = null
+      messages.value = []
+      error.value = null
+    }
   }
 
   function updateStreamingMessage(content: string) {
     const idx = messages.value.length - 1
     const lastMsg = messages.value[idx]
     if (lastMsg && lastMsg.role === 'assistant') {
-      // 直接修改属性（Vue 3 Proxy 应该追踪到）
-      lastMsg.content = content
-      // 强制替换数组引用，确保触发响应式更新
-      messages.value = [...messages.value]
+      // 用新对象替换，确保 Vue 3 响应式系统可靠地检测变更
+      messages.value = [
+        ...messages.value.slice(0, idx),
+        { ...lastMsg, content },
+      ]
     }
   }
 
   function finishStreaming(response: RAGResponse) {
-    isStreaming.value = false
-    const idx = messages.value.length - 1
-    const lastMsg = messages.value[idx]
-    if (lastMsg && lastMsg.role === 'assistant') {
-      // 直接修改属性
-      if (response.answer && response.answer.trim()) {
-        lastMsg.content = response.answer
+    streamingStatus.value = ''
+    abortController.value = null
+    // 查找最后一个 loading 中的 assistant 消息（不限定必须是数组最后一个元素）
+    let targetIdx = -1
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i]?.role === 'assistant' && messages.value[i]?.loading) {
+        targetIdx = i
+        break
+      }
+    }
+    // 回退：如果找不到 loading 消息，使用最后一个 assistant 消息
+    if (targetIdx < 0) {
+      for (let i = messages.value.length - 1; i >= 0; i--) {
+        if (messages.value[i]?.role === 'assistant') {
+          targetIdx = i
+          break
+        }
+      }
+    }
+    if (targetIdx >= 0) {
+      const lastMsg = messages.value[targetIdx]!
+      const updated: any = { ...lastMsg, loading: false }
+      const finalContent = response.answer?.trim() || lastMsg?.content || ''
+      if (finalContent) {
+        updated.content = finalContent
       }
       if (response.sources?.length) {
-        lastMsg.sources = normalizeSources(response.sources as any[])
+        updated.sources = normalizeSources(response.sources as any[])
       }
       if (response.confidence) {
-        lastMsg.confidence = response.confidence
+        updated.confidence = response.confidence
       }
       if (response.queryRewritten) {
-        lastMsg.queryRewritten = response.queryRewritten
+        updated.queryRewritten = response.queryRewritten
       }
-      lastMsg.loading = false
-      // 强制替换数组引用，确保触发响应式更新
-      messages.value = [...messages.value]
+      messages.value = [
+        ...messages.value.slice(0, targetIdx),
+        updated,
+        ...messages.value.slice(targetIdx + 1),
+      ]
     }
     if (response.sessionId) {
       currentSessionId.value = response.sessionId
     }
+    // 在消息更新之后再结束 streaming 状态，保证渲染时数据已就绪
+    isStreaming.value = false
     // 流结束后，处理延迟的新建会话请求
     if (pendingNewSession.value) {
       pendingNewSession.value = false
@@ -236,6 +297,29 @@ export const useRagStore = defineStore('rag', () => {
     error.value = null
   }
 
+  // UX-7: 重新生成 — 找到 AI 消息对应的 user 消息
+  function getPreviousUserMessage(aiMsgIndex: number): { content: string; msgIndex: number } | null {
+    for (let i = aiMsgIndex - 1; i >= 0; i--) {
+      if (messages.value[i]?.role === 'user') {
+        return { content: messages.value[i]?.content || '', msgIndex: i }
+      }
+    }
+    return null
+  }
+
+  // UX-7: 移除从指定 AI 消息（含）开始的所有后续消息，
+  // 同时移除该 AI 消息对应的 user 消息（user 消息会被 handleSend 重新发送）
+  function truncateMessagesFrom(aiMsgIndex: number) {
+    if (aiMsgIndex < 0 || aiMsgIndex >= messages.value.length) return
+    // 确保 aiMsgIndex 指向的是 assistant 消息
+    if (messages.value[aiMsgIndex]?.role !== 'assistant') return
+    // 找到该 AI 消息前面的最近一条 user 消息
+    const userInfo = getPreviousUserMessage(aiMsgIndex)
+    // 从 user 消息开始截断（含 user 消息本身）
+    const cutIdx = userInfo ? userInfo.msgIndex : aiMsgIndex
+    messages.value = messages.value.slice(0, cutIdx)
+  }
+
   return {
     sessions,
     currentSessionId,
@@ -243,10 +327,12 @@ export const useRagStore = defineStore('rag', () => {
     messages,
     isLoading,
     isStreaming,
+    streamingStatus,
     error,
     indexStatus,
     sortedSessions,
     pendingNewSession,
+    abortController,
     fetchSessions,
     fetchIndexStatus,
     createSession,
@@ -256,8 +342,12 @@ export const useRagStore = defineStore('rag', () => {
     addUserMessage,
     addAssistantMessage,
     startStreaming,
+    updateStreamingStatus,
     updateStreamingMessage,
+    abortStreaming,
     finishStreaming,
     clearError,
+    getPreviousUserMessage,
+    truncateMessagesFrom,
   }
 })

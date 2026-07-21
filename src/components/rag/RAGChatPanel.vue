@@ -92,6 +92,8 @@ const scrollToBottom = async () => {
 }
 
 // 发送问题（流式 SSE）
+let abortController: AbortController | null = null
+
 const handleSend = async (question: string) => {
   if (isLoading.value) return
 
@@ -105,6 +107,8 @@ const handleSend = async (question: string) => {
   isLoading.value = true
   await scrollToBottom()
 
+  abortController = new AbortController()
+
   try {
     const { streamRAG } = await import('@/composables/useRagStream')
 
@@ -116,9 +120,9 @@ const handleSend = async (question: string) => {
         max_sources: 5,
         highlight: props.selectedText || undefined,
       },
+      signal: abortController.signal,
       onContent: (chunk) => {
         aiMsg.content += chunk
-        aiMsg.loading = false
         scrollToBottom()
       },
       onSources: (s) => {
@@ -133,7 +137,7 @@ const handleSend = async (question: string) => {
         sessionId.value = id
       },
       onQueryRewritten: (q) => {
-        aiMsg.content = `> 🔍 已理解为：「${q}」\n\n`
+        aiMsg.content = `> 🔍 已理解为：「${q}」\n\n` + aiMsg.content
         scrollToBottom()
       },
       onError: (msg) => {
@@ -145,17 +149,27 @@ const handleSend = async (question: string) => {
       },
     })
   } catch (e: any) {
+    if (e.name === 'AbortError') return
     aiMsg.content = `请求失败: ${e.message || '网络错误'}`
     aiMsg.loading = false
   } finally {
     isLoading.value = false
+    abortController = null
     await scrollToBottom()
+  }
+}
+
+// 停止生成
+const handleStop = () => {
+  if (abortController) {
+    abortController.abort()
+    abortController = null
   }
 }
 
 // 跳转文章
 const handleNavigate = (articleId: number) => {
-  router.push(`/article/${articleId}`)
+  router.push(`/articles/${articleId}`)
 }
 
 // 复制消息内容
@@ -259,7 +273,7 @@ const clearChat = async () => {
 
         <!-- 输入框 -->
         <div class="rag-footer">
-          <RAGInput v-model="inputText" :loading="isLoading" @send="handleSend" />
+          <RAGInput v-model="inputText" :loading="isLoading" @send="handleSend" @stop="handleStop" />
         </div>
       </template>
 
@@ -398,5 +412,28 @@ const clearChat = async () => {
     bottom: 16px;
     right: 16px;
   }
+}
+
+/* Dark mode */
+[data-theme="dark"] .rag-panel {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .rag-header {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .rag-footer {
+  border-top-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .rag-msg-assistant {
+  background: rgba(148, 163, 184, 0.08);
+  color: #94a3b8;
+}
+[data-theme="dark"] .rag-msg-assistant:hover {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
+[data-theme="dark"] .rag-empty {
+  color: #64748b;
 }
 </style>

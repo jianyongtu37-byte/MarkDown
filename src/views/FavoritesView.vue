@@ -1,10 +1,6 @@
 <template>
-  <div class="relative overflow-hidden">
-    <!-- Ambient blur decorations -->
-    <div class="absolute -top-24 -left-24 w-96 h-96 bg-indigo-200/30 rounded-full blur-3xl pointer-events-none"></div>
-    <div class="absolute -bottom-24 -right-24 w-96 h-96 bg-amber-200/30 rounded-full blur-3xl pointer-events-none"></div>
-
-    <div class="relative z-10 py-8 sm:py-16 max-w-[1200px] mx-auto px-4 sm:px-6">
+  <div>
+    <div class="py-8 sm:py-16 max-w-[1200px] mx-auto px-4 sm:px-6">
       <!-- Page header -->
       <div class="flex justify-between items-start mb-6 sm:mb-8 pt-4 sm:pt-12">
         <div>

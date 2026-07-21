@@ -35,6 +35,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         // 强制新 SW 立即激活，不等待旧 SW 控制的标签页关闭
         skipWaiting: true,
         clientsClaim: true,

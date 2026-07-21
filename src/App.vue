@@ -3,15 +3,32 @@ import { computed, ref, watch } from 'vue'
 import { useRouter, RouterView, useRoute } from 'vue-router'
 import { ElAvatar } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import NotificationBell from '@/components/article/NotificationBell.vue'
 import BottomTabBar from '@/components/mobile/BottomTabBar.vue'
+import ShortcutHelpDialog from '@/components/misc/ShortcutHelpDialog.vue'
 import { useKeyboardAvoid } from '@/composables/useKeyboardAvoid'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import type { Shortcut } from '@/composables/useKeyboardShortcuts'
 
 useKeyboardAvoid()
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
+
+// 快捷键
+const { showHelp } = useKeyboardShortcuts(() => shortcuts.value)
+const showShortcutHelp = ref(false)
+const shortcuts = ref<Shortcut[]>([
+  { keys: 'ctrl+k', description: '快速搜索', handler: () => router.push('/articles') },
+  { keys: 'ctrl+n', description: '新建文章', handler: () => router.push('/articles/new') },
+  { keys: 'ctrl+h', description: '回到首页', handler: () => router.push('/') },
+  { keys: 'ctrl+b', description: '切换暗色模式', handler: () => themeStore.toggle() },
+  { keys: '?', description: '显示快捷键帮助', handler: () => { showShortcutHelp.value = true } },
+])
+
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 const mainClasses = computed(() => {
@@ -41,7 +58,7 @@ const goToProfile = () => {
 
 <template>
   <!-- Outer wrapper: gradient background -->
-  <div class="min-h-screen" style="background: linear-gradient(135deg, #E2E8F0 0%, #CBD5E1 100%);">
+  <div class="min-h-screen app-outer-wrapper">
     <!-- Glass Navbar -->
     <header class="glass-navbar">
       <div class="max-w-[1200px] mx-auto px-4 md:px-6 h-14 flex items-center justify-between">
@@ -82,6 +99,12 @@ const goToProfile = () => {
           <router-link to="/reading-history" class="px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-white/50 rounded-lg transition-colors" active-class="text-orange-600 bg-orange-50/60">
             阅读历史
           </router-link>
+          <router-link to="/stats" class="px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-white/50 rounded-lg transition-colors" active-class="text-orange-600 bg-orange-50/60">
+            写作统计
+          </router-link>
+          <router-link to="/knowledge-graph" class="px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-white/50 rounded-lg transition-colors" active-class="text-orange-600 bg-orange-50/60">
+            知识图谱
+          </router-link>
           <router-link to="/rag" class="px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-white/50 rounded-lg transition-colors" active-class="text-orange-600 bg-orange-50/60">
             知识问答
           </router-link>
@@ -99,6 +122,14 @@ const goToProfile = () => {
         <div class="hidden md:flex items-center gap-4">
           <div v-if="isAuthenticated && user" class="flex items-center gap-3">
             <NotificationBell class="flex items-center" />
+            <button
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-orange-500 hover:bg-white/50 transition-colors"
+              @click="themeStore.toggle()"
+              :title="themeStore.isDark ? '切换亮色模式' : '切换暗色模式'"
+            >
+              <svg v-if="themeStore.isDark" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
             <span class="w-px h-5 bg-slate-200"></span>
             <el-avatar
               :size="30"
@@ -135,6 +166,13 @@ const goToProfile = () => {
         <div class="flex md:hidden items-center gap-2">
           <div v-if="isAuthenticated && user" class="flex items-center gap-2">
             <NotificationBell class="flex items-center" />
+            <button
+              class="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 transition-colors"
+              @click="themeStore.toggle()"
+            >
+              <svg v-if="themeStore.isDark" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
             <button
               class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-600 hover:bg-white/50 transition-colors"
               @click="mobileMenuOpen = !mobileMenuOpen"
@@ -234,6 +272,14 @@ const goToProfile = () => {
                   <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   阅读历史
                 </router-link>
+                <router-link to="/stats" class="mobile-nav-item" active-class="mobile-nav-active">
+                  <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+                  写作统计
+                </router-link>
+                <router-link to="/knowledge-graph" class="mobile-nav-item" active-class="mobile-nav-active">
+                  <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 7v10a4 4 0 0 0 4 4h10a4 4 0 0 0 4-4V7a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4z"/></svg>
+                  知识图谱
+                </router-link>
                 <router-link to="/rag" class="mobile-nav-item" active-class="mobile-nav-active">
                   <svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8"/><path d="M8 13h6"/></svg>
                   知识问答
@@ -271,16 +317,43 @@ const goToProfile = () => {
       </Transition>
     </Teleport>
 
+    <ShortcutHelpDialog v-model="showShortcutHelp" :shortcuts="shortcuts" />
     <BottomTabBar />
 
     <!-- Main content -->
     <main :class="mainClasses">
-      <RouterView />
+      <RouterView v-slot="{ Component, route: viewRoute }">
+        <Transition name="page-fade" mode="out-in">
+          <component :is="Component" :key="viewRoute.path" />
+        </Transition>
+      </RouterView>
     </main>
   </div>
 </template>
 
+<style>
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+</style>
+
 <style scoped>
+.app-outer-wrapper {
+  background: linear-gradient(135deg, #E2E8F0 0%, #CBD5E1 100%);
+}
+[data-theme="dark"] .app-outer-wrapper {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
 .glass-navbar {
   position: sticky;
   top: 0;
@@ -299,6 +372,21 @@ const goToProfile = () => {
     0 1px 3px 0 rgba(0, 0, 0, 0.03);
 }
 
+[data-theme="dark"] .glass-navbar {
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.88) 0%,
+    rgba(15, 23, 42, 0.75) 100%
+  );
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow:
+    0 1px 0 0 rgba(148, 163, 184, 0.08) inset,
+    0 4px 24px 0 rgba(0, 0, 0, 0.3),
+    0 1px 3px 0 rgba(0, 0, 0, 0.2);
+}
+
 .mobile-drawer-panel {
   background: linear-gradient(
     180deg,
@@ -308,6 +396,38 @@ const goToProfile = () => {
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] .mobile-drawer-panel {
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.95) 0%,
+    rgba(15, 23, 42, 0.92) 100%
+  );
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Navbar link hover states in dark mode */
+[data-theme="dark"] .glass-navbar a:hover {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .glass-navbar .router-link-active.text-orange-600 {
+  background: rgba(251, 146, 60, 0.15);
+}
+[data-theme="dark"] .glass-navbar .router-link-exact-active.text-orange-600 {
+  background: rgba(251, 146, 60, 0.15);
+}
+
+/* Mobile drawer borders in dark mode */
+[data-theme="dark"] .mobile-drawer-panel .border-slate-200\/60 {
+  border-color: rgba(148, 163, 184, 0.12);
+}
+
+/* Nav link hover backgrounds in dark mode */
+[data-theme="dark"] .glass-navbar a.hover\:bg-white\/50:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .mobile-nav-item {
@@ -329,6 +449,18 @@ const goToProfile = () => {
 .mobile-nav-active {
   color: #ea580c !important;
   background: rgba(251, 146, 60, 0.1) !important;
+}
+
+[data-theme="dark"] .mobile-nav-item {
+  color: #94a3b8;
+}
+[data-theme="dark"] .mobile-nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+[data-theme="dark"] .mobile-nav-active {
+  color: #fb923c !important;
+  background: rgba(251, 146, 60, 0.15) !important;
 }
 
 /* Drawer transitions */

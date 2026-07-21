@@ -130,6 +130,129 @@ export async function renderMarkdownWithVditor(content: string): Promise<string>
   }
 }
 
+// Wiki 链接正则：[[title]] 或 [[title|alias]]
+const WIKI_LINK_REGEX = /\[\[([^\]\[]+?)(?:\|([^\]\[]+?))?\]\]/g
+
+// 将 Markdown 中的 [[wiki链接]] 替换为安全占位符，并返回映射表
+function replaceWikiLinksWithPlaceholders(content: string): { text: string; map: Map<string, { title: string; alias: string | null }> } {
+  const map = new Map<string, { title: string; alias: string | null }>()
+  let index = 0
+
+  const text = content.replace(WIKI_LINK_REGEX, (match, title: string, alias: string | undefined) => {
+    const placeholder = `%%WIKILINK_${index}%%`
+    map.set(placeholder, { title: title.trim(), alias: alias ? alias.trim() : null })
+    index++
+    return placeholder
+  })
+
+  return { text, map }
+}
+
+// 将占位符恢复为可点击的 wiki 链接 HTML
+function restoreWikiLinkPlaceholders(
+  html: string,
+  map: Map<string, { title: string; alias: string | null }>,
+  resolvedLinks: Map<string, number | null>
+): string {
+  let result = html
+  for (const [placeholder, { title, alias }] of map) {
+    const articleId = resolvedLinks.get(title)
+    const displayText = alias || title
+
+    if (articleId) {
+      // 已解析的链接
+      const link = `<a href="/articles/${articleId}" class="wiki-link wiki-link-resolved" data-wiki-title="${title}" title="${title}">${displayText}</a>`
+      result = result.replace(placeholder, link)
+    } else if (articleId === null && resolvedLinks.has(title)) {
+      // 断链
+      const link = `<span class="wiki-link wiki-link-broken" data-wiki-title="${title}" title="链接目标不存在：${title}">${displayText}</span>`
+      result = result.replace(placeholder, link)
+    } else {
+      // 未在解析列表中（不应该出现，降级为纯文本）
+      result = result.replace(placeholder, displayText)
+    }
+  }
+  return result
+}
+
+// 从内容中提取所有 [[wiki链接]] 标题
+export function extractWikiLinks(content: string): string[] {
+  const titles: string[] = []
+  let match: RegExpExecArray | null
+  const regex = new RegExp(WIKI_LINK_REGEX.source, 'g')
+  while ((match = regex.exec(content)) !== null) {
+    titles.push(match[1]!.trim())
+  }
+  return [...new Set(titles)]
+}
+
+// 解析 wiki 链接映射（title → articleId 或 null 表示断链）
+export async function resolveWikiLinks(titles: string[]): Promise<Map<string, number | null>> {
+  const result = new Map<string, number | null>()
+  if (titles.length === 0) return result
+
+  try {
+    const { wikiLinkApi } = await import('@/utils/api')
+    for (const title of titles) {
+      try {
+        const searchResults = await wikiLinkApi.searchTitles(title, 1)
+        if (searchResults && searchResults.length === 1) {
+          result.set(title, searchResults[0]!.id)
+        } else {
+          result.set(title, null) // 断链
+        }
+      } catch {
+        result.set(title, null)
+      }
+    }
+  } catch {
+    // 降级：所有链接都标记为未知
+    titles.forEach(t => result.set(t, null))
+  }
+
+  return result
+}
+
+// 增强版 Markdown 渲染：同时处理时间戳和 wiki 链接
+export async function renderMarkdownEnhanced(content: string): Promise<string> {
+  // 步骤1: 提取时间戳并替换为占位符
+  const { text: textAfterTs, map: tsMap } = replaceTimestampsWithPlaceholders(content)
+
+  // 步骤2: 提取 wiki 链接并替换为占位符
+  const { text: cleanText, map: wikiMap } = replaceWikiLinksWithPlaceholders(textAfterTs)
+
+  // 步骤3: Vditor 渲染
+  let html: string
+  try {
+    html = await Vditor.md2html(cleanText, {
+      mode: 'light',
+      hljs: { style: 'github', lineNumber: true },
+      math: { engine: 'KaTeX' },
+      markdown: { toc: true, autoSpace: true, paragraphBeginningSpace: true, mark: true, footnotes: true, linkBase: '' }
+    })
+  } catch {
+    html = `<div class="vditor-reset">${cleanText}</div>`
+  }
+
+  // 步骤4: 解析 wiki 链接
+  const wikiTitles = [...new Set([...wikiMap.values()].map(v => v.title))]
+  const resolvedLinks = await resolveWikiLinks(wikiTitles)
+
+  // 步骤5: 恢复时间戳占位符
+  let withTs = html
+  for (const [placeholder, originalMatch] of tsMap) {
+    const secMatch = placeholder.match(/%%TIMESTAMP_\d+_(\d+)%%/)
+    const seconds = secMatch ? parseInt(secMatch[1] || '0') : 0
+    const span = `<span class="timestamp-link" data-sec="${seconds}" title="跳转到 ${originalMatch}">${originalMatch}</span>`
+    withTs = withTs.replace(placeholder, span)
+  }
+
+  // 步骤6: 恢复 wiki 链接占位符
+  const finalHtml = restoreWikiLinkPlaceholders(withTs, wikiMap, resolvedLinks)
+
+  return finalHtml
+}
+
 // 格式化时间戳显示（秒转换为 mm:ss 或 hh:mm:ss）
 export function formatTimestamp(seconds: number): string {
   const hours = Math.floor(seconds / 3600)

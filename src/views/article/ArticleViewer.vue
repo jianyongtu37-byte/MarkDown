@@ -72,7 +72,6 @@
               <span class="meta-item">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 {{ store.detail.authorName || store.detail.nickname || store.detail.username || '未知用户' }}
-                <span class="text-slate-400">(ID: {{ store.detail.userId }})</span>
               </span>
               <span class="meta-divider">·</span>
               <span class="meta-item">
@@ -99,6 +98,9 @@
             <p class="ai-summary-text">{{ store.detail.summary }}</p>
           </div>
         </div>
+
+        <!-- 文章目录 -->
+        <TocSidebar />
 
         <!-- 知识图谱面板 -->
         <KnowledgeGraphPanel
@@ -165,6 +167,7 @@ import VideoPlayer from '@/components/video/VideoPlayer.vue'
 import TimestampNav from '@/components/video/TimestampNav.vue'
 import CommentSection from '@/components/article/CommentSection.vue'
 import KnowledgeGraphPanel from '@/components/knowledge/KnowledgeGraphPanel.vue'
+import TocSidebar from '@/components/article/TocSidebar.vue'
 import type { ArticleDetail, VideoMeta, Timestamp } from '@/types/article'
 
 const route = useRoute()
@@ -316,7 +319,7 @@ const user = computed(() => authStore.user)
 
 const isAuthor = computed(() => {
   if (!store.detail || !user.value) return false
-  return Number(store.detail.userId) === Number(user.value.id)
+  return store.detail.username === user.value.username
 })
 
 const canEditOrDelete = computed(() => {
@@ -692,5 +695,22 @@ onMounted(async () => {
   .meta-divider {
     display: none;
   }
+}
+
+/* Dark mode */
+[data-theme="dark"] .status-public {
+  background: rgba(5, 150, 105, 0.15); color: #34d399; border-color: rgba(52, 211, 153, 0.3);
+}
+[data-theme="dark"] .status-private {
+  background: rgba(100, 116, 139, 0.15); color: #94a3b8; border-color: rgba(148, 163, 184, 0.3);
+}
+[data-theme="dark"] .status-draft {
+  background: rgba(217, 119, 6, 0.15); color: #fbbf24; border-color: rgba(251, 191, 36, 0.3);
+}
+[data-theme="dark"] .ai-badge {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.15), rgba(251, 146, 60, 0.06));
+}
+[data-theme="dark"] .ai-summary-card {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.08), rgba(30, 41, 59, 0.5));
 }
 </style>

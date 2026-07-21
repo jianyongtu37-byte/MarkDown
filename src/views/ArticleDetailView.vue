@@ -16,7 +16,12 @@ import CommentSection from '@/components/article/CommentSection.vue'
 import ArticleRecommendations from '@/components/article/ArticleRecommendations.vue'
 import RAGChatPanel from '@/components/rag/RAGChatPanel.vue'
 import KnowledgeGraphPanel from '@/components/knowledge/KnowledgeGraphPanel.vue'
+import LocalGraphPanel from '@/components/article/LocalGraphPanel.vue'
+import BacklinksPanel from '@/components/article/BacklinksPanel.vue'
+import TocSidebar from '@/components/article/TocSidebar.vue'
+import BreadcrumbNav from '@/components/misc/BreadcrumbNav.vue'
 import type { ArticleDetail, VideoMeta, Timestamp } from '@/types/article'
+import { useReadingModeProvider } from '@/composables/useReadingMode'
 import { renderMarkdownWithVditor, convertTimestampsToLinks } from '@/utils/markdown'
 import { parseTimestamps } from '@/utils/timestampParser'
 import Vditor from 'vditor'
@@ -27,6 +32,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const store = useArticleStore()
 const { isMobile } = useLayout()
+const { isReadingMode, toggle: toggleReadingMode, exit: exitReadingMode } = useReadingModeProvider()
 
 // 数据
 const article = ref<ArticleDetail | null>(null)
@@ -35,6 +41,18 @@ const currentSec = ref(0)
 const renderedContent = ref('')
 const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
 const selectedText = ref('')
+
+const breadcrumbItems = computed(() => {
+  const items = [
+    { label: '首页', to: '/' },
+    { label: '文章列表', to: '/articles' },
+  ]
+  if (article.value?.categoryName) {
+    items.push({ label: article.value.categoryName })
+  }
+  items.push({ label: article.value?.title || '加载中...' })
+  return items
+})
 
 // 监听文本选中（用于 RAG 选段提问）
 const handleTextSelection = () => {
@@ -56,8 +74,7 @@ const user = computed(() => authStore.user)
 // 是否是文章作者
 const isAuthor = computed(() => {
   if (!article.value || !user.value) return false
-  // 确保比较的是数字类型
-  return Number(article.value.userId) === Number(user.value.id)
+  return article.value.username === user.value.username
 })
 
 // 是否显示编辑/删除按钮（仅当从"我的文章"页面进入时才显示）
@@ -143,6 +160,44 @@ const loadArticleDetail = async () => {
 // const renderVditorPreview 已被移除，请使用 updateRenderedContent
 // 该函数通过 v-html 绑定 renderedContent，并正确转换时间戳为可点击链接
 
+// 将渲染后 HTML 中的 [[title]] 文本转换为 wiki 链接
+const convertWikiLinksInHtml = async (html: string): Promise<string> => {
+  // 匹配未转义的 [[title]] 或 [[title|alias]]（不在 HTML 标签内的）
+  const wikiRegex = /\[\[([^\]\[]+?)(?:\|([^\]\[]+?))?\]\]/g
+  const titles = new Set<string>()
+  let m: RegExpExecArray | null
+  const regex = new RegExp(wikiRegex.source, 'g')
+  while ((m = regex.exec(html)) !== null) {
+    titles.add(m[1]!.trim())
+  }
+
+  if (titles.size === 0) return html
+
+  // 批量解析 wiki 链接
+  const { wikiLinkApi: wlApi } = await import('@/utils/api')
+  const resolvedMap = new Map<string, number | null>()
+  for (const title of titles) {
+    try {
+      const results = await wlApi.searchTitles(title, 1)
+      resolvedMap.set(title, results && results.length === 1 ? results[0]!.id : null)
+    } catch {
+      resolvedMap.set(title, null)
+    }
+  }
+
+  // 替换 [[title]] 为链接
+  return html.replace(/\[\[([^\]\[]+?)(?:\|([^\]\[]+?))?\]\]/g, (match, title: string, alias: string | undefined) => {
+    const cleanTitle = title.trim()
+    const displayText = alias ? alias.trim() : cleanTitle
+    const articleId = resolvedMap.get(cleanTitle)
+
+    if (articleId) {
+      return `<a href="/articles/${articleId}" class="wiki-link wiki-link-resolved" data-wiki-title="${cleanTitle}">${displayText}</a>`
+    }
+    return `<span class="wiki-link wiki-link-broken" data-wiki-title="${cleanTitle}" title="链接目标不存在：${cleanTitle}">${displayText}</span>`
+  })
+}
+
 // 更新渲染内容
 const updateRenderedContent = async () => {
   if (!article.value?.content) {
@@ -151,7 +206,11 @@ const updateRenderedContent = async () => {
   }
 
   try {
-    const html = await renderMarkdownWithVditor(article.value.content)
+    let html = await renderMarkdownWithVditor(article.value.content)
+    // Wiki 链接后处理
+    try {
+      html = await convertWikiLinksInHtml(html)
+    } catch { /* wiki link conversion is best-effort */ }
     renderedContent.value = html
   } catch (error) {
     console.error('渲染Markdown失败:', error)
@@ -521,7 +580,17 @@ const formatTime = (time?: string) => {
     document.addEventListener('mouseup', handleTextSelection)
   })
 
+  // 阅读模式快捷键
+  const handleReadingModeKey = (e: KeyboardEvent) => {
+    if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      e.preventDefault()
+      toggleReadingMode()
+    }
+  }
+  document.addEventListener('keydown', handleReadingModeKey)
+
   onUnmounted(() => {
+    document.removeEventListener('keydown', handleReadingModeKey)
     reportReadingProgress()
     stopProgressTracking()
     document.removeEventListener('mouseup', handleTextSelection)
@@ -542,9 +611,10 @@ const formatTime = (time?: string) => {
       <!-- 顶部阅读进度条 -->
       <div class="reading-progress-bar" :style="{ width: readingProgress + '%' }"></div>
       <div class="relative overflow-hidden">
-        <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
-
-        <div class="relative z-10 py-16 max-w-[1200px] mx-auto px-6">
+        <div class="max-w-[1200px] mx-auto px-6">
+          <BreadcrumbNav :items="breadcrumbItems" />
+        </div>
+        <div class="py-16 max-w-[1200px] mx-auto px-6">
 
           <div v-if="loading" class="glass-card rounded-2xl p-6 sm:p-10">
             <el-skeleton :rows="10" animated />
@@ -582,7 +652,6 @@ const formatTime = (time?: string) => {
 
               <div class="flex items-center flex-wrap gap-x-2 gap-y-1 text-xs text-slate-400 mb-5">
                 <span class="font-medium text-slate-500">{{ article.authorName || article.nickname || article.username || '未知用户' }}</span>
-                <span class="text-slate-400">(ID: {{ article.userId }})</span>
                 <span>&middot;</span>
                 <span>发布于 {{ formatTime(article.createTime || article.createdAt) }}</span>
                 <span>&middot;</span>
@@ -629,7 +698,19 @@ const formatTime = (time?: string) => {
               :article-id="Number(articleId)"
             />
 
-            <div class="glass-card rounded-2xl p-6 sm:p-8 lg:p-10">
+            <!-- 局部关系图谱 -->
+            <LocalGraphPanel
+              v-if="articleId"
+              :article-id="Number(articleId)"
+            />
+
+            <!-- 双向链接面板 -->
+            <BacklinksPanel
+              v-if="articleId"
+              :article-id="Number(articleId)"
+            />
+
+            <div class="glass-card rounded-2xl p-6 sm:p-8 lg:p-10 article-content-area">
               <div
                 id="vditor-preview"
                 class="vditor-preview markdown-content text-slate-700 leading-relaxed"
@@ -787,13 +868,29 @@ const formatTime = (time?: string) => {
     </main>
   </div>
 
+  <!-- 文章目录 -->
+  <TocSidebar />
+
   <!-- RAG 知识问答面板 -->
   <RAGChatPanel
-    v-if="article"
+    v-if="article && !isReadingMode"
     :article-id="articleId"
     :article-title="article.title"
     :selected-text="selectedText"
   />
+
+  <!-- 阅读模式切换按钮 -->
+  <button
+    class="fixed bottom-6 right-6 z-[60] w-11 h-11 rounded-full shadow-lg flex items-center justify-center transition-all duration-200"
+    :class="isReadingMode ? 'bg-orange-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'"
+    :title="isReadingMode ? '退出阅读模式 (R)' : '阅读模式 (R)'"
+    @click="toggleReadingMode"
+  >
+    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  </button>
 </template>
 
 <style scoped>

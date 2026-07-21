@@ -1,14 +1,19 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Document } from '@element-plus/icons-vue'
 
 interface Source {
-  article_id: number
-  article_title: string
-  chunk_content: string
-  relevance_score: number
+  article_id?: number
+  articleId?: number
+  article_title?: string
+  articleTitle?: string
+  chunk_content?: string
+  chunkContent?: string
+  relevance_score?: number
+  relevanceScore?: number
 }
 
-defineProps<{
+const props = defineProps<{
   source: Source
 }>()
 
@@ -16,25 +21,30 @@ const emit = defineEmits<{
   (e: 'navigate', articleId: number): void
 }>()
 
-const handleClick = (articleId: number) => {
-  emit('navigate', articleId)
+const id = computed(() => props.source.article_id ?? props.source.articleId ?? 0)
+const title = computed(() => props.source.article_title ?? props.source.articleTitle ?? '')
+const content = computed(() => props.source.chunk_content ?? props.source.chunkContent ?? '')
+const score = computed(() => props.source.relevance_score ?? props.source.relevanceScore ?? 0)
+
+const handleClick = () => {
+  emit('navigate', id.value)
 }
 </script>
 
 <template>
   <div
     class="rag-source-card"
-    @click="handleClick(source.article_id)"
+    @click="handleClick"
   >
     <div class="flex items-center gap-1.5 mb-1">
       <el-icon class="text-orange-500" :size="12"><Document /></el-icon>
-      <span class="text-xs font-medium text-slate-700 truncate">{{ source.article_title }}</span>
+      <span class="text-xs font-medium text-slate-700 truncate">{{ title }}</span>
       <span class="text-[10px] text-slate-400 ml-auto shrink-0">
-        {{ (source.relevance_score * 100).toFixed(0) }}%
+        {{ (score * 100).toFixed(0) }}%
       </span>
     </div>
     <p class="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-      {{ source.chunk_content }}
+      {{ content }}
     </p>
   </div>
 </template>

@@ -6,6 +6,8 @@ import { User } from '@element-plus/icons-vue'
 import { categoryApi } from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
 import { useLayout } from '@/composables/useLayout'
+import TagTreePanel from '@/components/article/TagTreePanel.vue'
+import BreadcrumbNav from '@/components/misc/BreadcrumbNav.vue'
 import type { Category, CategoryCreateDTO, CategoryUpdateDTO } from '@/types/category'
 
 const router = useRouter()
@@ -146,11 +148,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="relative min-h-screen overflow-hidden">
-    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
-
-    <section class="relative z-10 py-16">
+  <div class="min-h-screen">
+    <section class="py-16">
       <div class="max-w-[860px] mx-auto px-6">
+
+        <!-- 面包屑导航 -->
+        <BreadcrumbNav :items="[{ label: '首页', to: '/' }, { label: '分类管理' }]" />
 
         <!-- 页头 -->
         <div class="flex justify-between items-center mb-8 pt-12">
@@ -260,6 +263,11 @@ onMounted(async () => {
           </div>
 
         </template>
+
+        <!-- 标签树 -->
+        <div class="mt-8">
+          <TagTreePanel />
+        </div>
       </div>
     </section>
 

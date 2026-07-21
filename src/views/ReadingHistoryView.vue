@@ -111,9 +111,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="relative overflow-hidden">
-    <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
-    <div class="relative z-10 py-16 max-w-[1200px] mx-auto px-6">
+  <div class="py-16 max-w-[1200px] mx-auto px-6">
       <div class="flex justify-between items-start mb-8 pt-12">
         <div>
           <h1 class="cursor-display-hero text-slate-800 mb-2">阅读历史</h1>
@@ -222,7 +220,6 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <style scoped>

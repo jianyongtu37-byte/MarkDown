@@ -87,4 +87,11 @@ function isActive(tab: Tab): boolean {
               0 -4px 24px 0 rgba(0, 0, 0, 0.05);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+[data-theme="dark"] .bottom-tab-bar {
+  background: rgba(15, 23, 42, 0.88);
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 -1px 0 0 rgba(148, 163, 184, 0.08) inset,
+              0 -4px 24px 0 rgba(0, 0, 0, 0.3);
+}
 </style>

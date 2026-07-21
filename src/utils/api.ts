@@ -27,6 +27,10 @@ import type {
   ReconciledCountsResult,
 } from '@/types/admin'
 import type { ArticleCreateDTO, ArticleQueryParams, ArticleListResult, ArticleDetail, VideoMeta, Timestamp, ArticleImportUrlRequest } from '@/types/article'
+import type { ArticleTemplate, TemplateRenderResult, TemplateExportVO } from '@/types/template'
+import type { WritingStats } from '@/types/stats'
+import type { WikiLinkVO, BacklinksVO, TitleSearchResult } from '@/types/wikiLink'
+import type { FlashcardVO, ReviewResultVO, FlashcardStatsVO, CreateFlashcardDTO } from '@/types/flashcard'
 
 export type { VideoMeta, Timestamp, ArticleDetail as ArticleWithVideo } from '@/types/article'
 
@@ -121,6 +125,12 @@ export const articleApi = {
 
   importUrl: (data: ArticleImportUrlRequest) =>
     post<number>('/articles/import/url', data),
+
+  getDailyNote: (date: string) =>
+    get<import('@/types/article').ArticleVO>(`/articles/daily/${date}`),
+
+  getCalendar: (year: number, month: number) =>
+    get<import('@/types/article').CalendarVO>('/articles/daily/calendar', { year, month }),
 }
 
 // ===== 用户管理 API =====
@@ -246,6 +256,51 @@ export const tagApi = {
 
   getTagNames: () =>
     get<string[]>('/tags/names'),
+
+  getTree: () =>
+    get<Tag[]>('/tags/tree'),
+
+  getChildren: (parentId: number) =>
+    get<Tag[]>(`/tags/${parentId}/children`),
+
+  setParent: (tagId: number, parentId: number | null) =>
+    put<void>(`/tags/${tagId}/parent`, null, { parentId }),
+
+  moveTag: (tagId: number, newParentId: number) =>
+    put<void>(`/tags/${tagId}/move`, null, { newParentId }),
+}
+
+// ===== 模板相关 API =====
+export const templateApi = {
+  listAvailable: () =>
+    get<ArticleTemplate[]>('/templates'),
+
+  listMy: () =>
+    get<ArticleTemplate[]>('/templates/my'),
+
+  render: (id: number, title?: string, author?: string) =>
+    get<TemplateRenderResult>(`/templates/${id}/render`, { title, author }),
+
+  create: (data: { name: string; description?: string; content: string; categoryId?: number }) =>
+    post<number>('/templates', data),
+
+  update: (id: number, data: { name?: string; description?: string; content?: string; categoryId?: number }) =>
+    put<void>(`/templates/${id}`, data),
+
+  delete: (id: number) =>
+    del<void>(`/templates/${id}`),
+
+  exportTemplate: (id: number) =>
+    get<TemplateExportVO>(`/templates/${id}/export`),
+
+  importTemplate: (data: TemplateExportVO) =>
+    post<number>('/templates/import', data),
+}
+
+// ===== 写作统计相关 API =====
+export const statsApi = {
+  getWritingStats: () =>
+    get<WritingStats>('/articles/stats/writing'),
 }
 
 // ===== DeepSeek AI 相关 API =====
@@ -522,6 +577,14 @@ export const ragApi = {
 
   /** 学习路径推荐 */
   recommendLearningPath: (topic?: string) => post<any>(`/rag/analysis/learning-path${topic ? '?topic=' + encodeURIComponent(topic) : ''}`),
+
+  /** 提交回答反馈（点赞/点踩） */
+  submitFeedback: (data: {
+    session_id?: string
+    message_id?: string
+    rating: number
+    comment?: string
+  }) => post<any>('/rag/feedback', data),
 }
 
 // ===== 文章推荐 API =====
@@ -552,8 +615,8 @@ export const knowledgeGraphApi = {
     get<KnowledgeGraph>(`/knowledge-graph/${articleId}`),
 
   /** 获取全局知识图谱 */
-  getGlobal: () =>
-    get<GlobalKnowledgeGraph>('/knowledge-graph/global'),
+  getGlobal: (params?: { startDate?: string; endDate?: string }) =>
+    get<GlobalKnowledgeGraph>('/knowledge-graph/global', params),
 
   /** 重新生成知识图谱 */
   regenerate: (articleId: number) =>
@@ -562,6 +625,50 @@ export const knowledgeGraphApi = {
   /** 删除知识图谱 */
   delete: (articleId: number) =>
     del<void>(`/knowledge-graph/${articleId}`),
+}
+
+/** Wiki 链接（双向链接） API */
+export const wikiLinkApi = {
+  /** 获取文章的双向链接汇总 */
+  getBacklinks: (articleId: number) =>
+    get<BacklinksVO>(`/wiki-links/backlinks/${articleId}`),
+
+  /** 获取文章的回链列表 */
+  getIncoming: (articleId: number) =>
+    get<WikiLinkVO[]>(`/wiki-links/incoming/${articleId}`),
+
+  /** 获取文章的出链列表 */
+  getOutgoing: (articleId: number) =>
+    get<WikiLinkVO[]>(`/wiki-links/outgoing/${articleId}`),
+
+  /** [[ 自动补全：按标题搜索文章 */
+  searchTitles: (keyword: string, limit = 10) =>
+    get<TitleSearchResult[]>('/wiki-links/search', { keyword, limit }),
+
+  /** 获取全局断链列表 */
+  getBrokenLinks: () =>
+    get<WikiLinkVO[]>('/wiki-links/broken'),
+
+  /** 获取局部关系图谱 */
+  getLocalGraph: (articleId: number) =>
+    get<import('@/types/wikiLink').LocalGraphVO>(`/wiki-links/graph/${articleId}`),
+}
+
+// ===== 闪卡 API =====
+export const flashcardApi = {
+  list: () => get<FlashcardVO[]>('/flashcards'),
+
+  create: (data: CreateFlashcardDTO) => post<FlashcardVO>('/flashcards', data),
+
+  delete: (id: number) => del<void>(`/flashcards/${id}`),
+
+  getDailyReview: () => get<FlashcardVO[]>('/flashcards/review/daily'),
+
+  review: (id: number, quality: number) => post<ReviewResultVO>(`/flashcards/${id}/review`, { quality }),
+
+  autoGenerate: (articleId: number) => post<FlashcardVO[]>(`/flashcards/generate/${articleId}`),
+
+  getStats: () => get<FlashcardStatsVO>('/flashcards/stats'),
 }
 
 export default {
@@ -579,6 +686,8 @@ export default {
   categoryApi,
   searchApi,
   tagApi,
+  templateApi,
+  statsApi,
   deepseekApi,
   versionApi,
   likeApi,
@@ -594,4 +703,6 @@ export default {
   ragApi,
   recommendationApi,
   knowledgeGraphApi,
+  wikiLinkApi,
+  flashcardApi,
 }

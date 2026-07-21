@@ -1,0 +1,542 @@
+/* ===== 语义化颜色令牌 ===== */
+:root {
+  --color-bg-primary: #f0f4f8;
+  --color-bg-surface: #ffffff;
+  --color-bg-glass: rgba(255, 255, 255, 0.6);
+  --color-bg-glass-hover: rgba(255, 255, 255, 0.85);
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+  --color-border-primary: rgba(38, 37, 30, 0.1);
+  --color-border-glass: rgba(255, 255, 255, 0.3);
+  --color-accent: #f97316;
+  --color-accent-hover: #ea580c;
+  --color-accent-light: rgba(249, 115, 22, 0.1);
+  --shadow-glass: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-glass-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.5);
+  --glass-border: rgba(255, 255, 255, 0.3);
+}
+
+/* ===== 深色主题 ===== */
+[data-theme="dark"] {
+  --color-bg-primary: #0f172a;
+  --color-bg-surface: #1e293b;
+  --color-bg-glass: rgba(30, 41, 59, 0.75);
+  --color-bg-glass-hover: rgba(30, 41, 59, 0.92);
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-border-primary: rgba(148, 163, 184, 0.2);
+  --color-border-glass: rgba(148, 163, 184, 0.12);
+  --color-accent: #fb923c;
+  --color-accent-hover: #f97316;
+  --color-accent-light: rgba(251, 146, 60, 0.15);
+  --shadow-glass: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-glass-hover: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --glass-bg: rgba(30, 41, 59, 0.6);
+  --glass-border: rgba(148, 163, 184, 0.12);
+}
+
+/* ===== 全局应用 ===== */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ============================================================
+   Tailwind 硬编码颜色覆盖 — 深色模式
+   覆盖未使用 dark: 前缀的硬编码 Tailwind 工具类
+   ============================================================ */
+
+/* 主文本色 — text-slate-800 / text-slate-700 → 浅色 */
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-slate-700 {
+  color: #e2e8f0;
+}
+/* 次文本色 — text-slate-600 → 较浅色 */
+[data-theme="dark"] .text-slate-600 {
+  color: #cbd5e1;
+}
+/* 辅助文本色 — text-slate-500 → 稍微调亮 */
+[data-theme="dark"] .text-slate-500 {
+  color: #94a3b8;
+}
+/* 非常浅的文本 — text-slate-400 → 保持可读 */
+[data-theme="dark"] .text-slate-400 {
+  color: #64748b;
+}
+[data-theme="dark"] .text-slate-300 {
+  color: #475569;
+}
+
+/* hover 文本色 */
+[data-theme="dark"] .hover\:text-slate-800:hover {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .hover\:text-slate-700:hover {
+  color: #e2e8f0;
+}
+
+/* gray 色系覆盖 (兼容部分组件使用的 gray 色) */
+[data-theme="dark"] .text-gray-500 {
+  color: #94a3b8;
+}
+[data-theme="dark"] .text-gray-600 {
+  color: #cbd5e1;
+}
+[data-theme="dark"] .text-gray-700 {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .text-gray-800 {
+  color: #e2e8f0;
+}
+[data-theme="dark"] .text-gray-900 {
+  color: #f1f5f9;
+}
+
+/* 背景色覆盖 */
+[data-theme="dark"] .bg-white {
+  background-color: #1e293b;
+}
+[data-theme="dark"] .bg-slate-100,
+[data-theme="dark"] .bg-slate-50 {
+  background-color: #1e293b;
+}
+[data-theme="dark"] .bg-slate-200 {
+  background-color: #334155;
+}
+[data-theme="dark"] .bg-slate-800\/\[0\.03\] {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* 白色半透明背景覆盖 — 深色模式转为暗色半透明 */
+[data-theme="dark"] .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+[data-theme="dark"] .bg-white\/20 {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .bg-white\/30 {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .bg-white\/40 {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .bg-white\/50 {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .bg-white\/60 {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .bg-white\/70 {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .bg-white\/80 {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+[data-theme="dark"] .bg-white\/90 {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+[data-theme="dark"] .hover\:bg-white\/50:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .hover\:bg-white\/30:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 边框色覆盖 */
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-200\/40,
+[data-theme="dark"] .border-slate-200\/60 {
+  border-color: rgba(148, 163, 184, 0.15);
+}
+[data-theme="dark"] .border-slate-100 {
+  border-color: rgba(148, 163, 184, 0.1);
+}
+
+/* 分割线 / 分隔色 */
+[data-theme="dark"] .bg-slate-200 {
+  background-color: rgba(148, 163, 184, 0.2);
+}
+[data-theme="dark"] .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(148, 163, 184, 0.15);
+}
+
+/* ============================================================
+   Element Plus 组件覆盖 — 深色模式
+   ============================================================ */
+
+/* Dialog */
+[data-theme="dark"] .el-dialog {
+  --el-dialog-bg-color: var(--color-bg-surface);
+  --el-dialog-text-color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-dialog__header {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-dialog__body {
+  color: var(--color-text-secondary);
+}
+
+/* Input / Textarea */
+[data-theme="dark"] .el-input__wrapper {
+  background-color: var(--color-bg-glass);
+  box-shadow: 0 0 0 1px var(--color-border-primary) inset;
+}
+[data-theme="dark"] .el-input__inner {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-input__inner::placeholder {
+  color: var(--color-text-muted);
+}
+[data-theme="dark"] .el-textarea__inner {
+  background-color: var(--color-bg-glass);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-primary);
+}
+[data-theme="dark"] .el-textarea__inner::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Select */
+[data-theme="dark"] .el-select .el-input__wrapper {
+  background-color: var(--color-bg-glass);
+}
+[data-theme="dark"] .el-select-dropdown {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+}
+[data-theme="dark"] .el-select-dropdown__item {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-select-dropdown__item:hover {
+  background-color: var(--color-accent-light);
+}
+[data-theme="dark"] .el-select-dropdown__item.selected {
+  color: var(--color-accent);
+}
+[data-theme="dark"] .el-popper.is-light {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+/* Button */
+[data-theme="dark"] .el-button--default {
+  --el-button-bg-color: var(--color-bg-glass);
+  --el-button-border-color: var(--color-border-primary);
+  --el-button-text-color: var(--color-text-primary);
+  --el-button-hover-bg-color: var(--color-bg-glass-hover);
+  --el-button-hover-border-color: var(--color-accent);
+  --el-button-hover-text-color: var(--color-accent);
+}
+[data-theme="dark"] .el-button.is-link {
+  --el-button-text-color: var(--color-text-secondary);
+}
+
+/* Table */
+[data-theme="dark"] .el-table {
+  --el-table-bg-color: var(--color-bg-surface);
+  --el-table-tr-bg-color: var(--color-bg-surface);
+  --el-table-header-bg-color: var(--color-bg-glass);
+  --el-table-text-color: var(--color-text-primary);
+  --el-table-header-text-color: var(--color-text-secondary);
+  --el-table-border-color: var(--color-border-primary);
+  --el-table-row-hover-bg-color: rgba(148, 163, 184, 0.06);
+}
+[data-theme="dark"] .el-table__body-wrapper {
+  background-color: var(--color-bg-surface);
+}
+[data-theme="dark"] .el-table th.el-table__cell {
+  background-color: var(--color-bg-glass);
+}
+[data-theme="dark"] .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background-color: rgba(148, 163, 184, 0.04);
+}
+
+/* Card */
+[data-theme="dark"] .el-card {
+  --el-card-bg-color: var(--color-bg-surface);
+  --el-card-border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+/* Pagination */
+[data-theme="dark"] .el-pagination {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-text-color: var(--color-text-secondary);
+  --el-pagination-button-bg-color: var(--color-bg-glass);
+  --el-pagination-button-color: var(--color-text-primary);
+  --el-pagination-button-disabled-bg-color: rgba(148, 163, 184, 0.08);
+  --el-pagination-hover-color: var(--color-accent);
+}
+[data-theme="dark"] .el-pager li {
+  color: var(--color-text-secondary);
+}
+[data-theme="dark"] .el-pager li.active {
+  color: var(--color-accent);
+}
+[data-theme="dark"] .el-pager li:hover {
+  color: var(--color-accent);
+}
+
+/* Menu */
+[data-theme="dark"] .el-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--color-text-secondary);
+  --el-menu-hover-bg-color: var(--color-bg-glass);
+  --el-menu-active-color: var(--color-accent);
+  --el-menu-border-color: transparent;
+}
+[data-theme="dark"] .el-menu-item:hover {
+  background-color: var(--color-bg-glass);
+}
+
+/* Tag */
+[data-theme="dark"] .el-tag--default {
+  --el-tag-bg-color: var(--color-bg-glass);
+  --el-tag-border-color: var(--color-border-primary);
+  --el-tag-text-color: var(--color-text-secondary);
+}
+[data-theme="dark"] .el-tag--plain {
+  --el-tag-bg-color: transparent;
+}
+
+/* Breadcrumb */
+[data-theme="dark"] .el-breadcrumb__inner {
+  color: var(--color-text-muted);
+}
+[data-theme="dark"] .el-breadcrumb__inner:hover {
+  color: var(--color-accent);
+}
+
+/* Tabs */
+[data-theme="dark"] .el-tabs__item {
+  color: var(--color-text-secondary);
+}
+[data-theme="dark"] .el-tabs__item.is-active {
+  color: var(--color-accent);
+}
+[data-theme="dark"] .el-tabs__header {
+  border-bottom-color: var(--color-border-primary);
+}
+
+/* Collapse */
+[data-theme="dark"] .el-collapse-item__header {
+  color: var(--color-text-primary);
+  background-color: transparent;
+}
+[data-theme="dark"] .el-collapse-item__wrap {
+  background-color: transparent;
+}
+[data-theme="dark"] .el-collapse-item__content {
+  color: var(--color-text-secondary);
+}
+
+/* Tree */
+[data-theme="dark"] .el-tree {
+  --el-tree-text-color: var(--color-text-secondary);
+  background-color: transparent;
+}
+[data-theme="dark"] .el-tree-node__content:hover {
+  background-color: var(--color-bg-glass);
+}
+[data-theme="dark"] .el-tree-node.is-current > .el-tree-node__content {
+  background-color: var(--color-accent-light);
+}
+
+/* Dropdown / Popover */
+[data-theme="dark"] .el-dropdown-menu {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+}
+[data-theme="dark"] .el-dropdown-menu__item {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-dropdown-menu__item:hover {
+  background-color: var(--color-accent-light);
+}
+[data-theme="dark"] .el-popover {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+
+/* Empty */
+[data-theme="dark"] .el-empty__description p {
+  color: var(--color-text-muted);
+}
+
+/* Divider */
+[data-theme="dark"] .el-divider__text {
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-primary);
+}
+
+/* Skeleton / Loading */
+[data-theme="dark"] .el-loading-mask {
+  background-color: rgba(15, 23, 42, 0.8);
+}
+
+/* Drawer */
+[data-theme="dark"] .el-drawer {
+  --el-drawer-bg-color: var(--color-bg-surface);
+}
+[data-theme="dark"] .el-drawer__header {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-drawer__body {
+  color: var(--color-text-secondary);
+}
+
+/* Slider */
+[data-theme="dark"] .el-slider__bar {
+  background-color: var(--color-accent);
+}
+[data-theme="dark"] .el-slider__button {
+  border-color: var(--color-accent);
+}
+
+/* Switch */
+[data-theme="dark"] .el-switch__label {
+  color: var(--color-text-secondary);
+}
+
+/* Checkbox / Radio */
+[data-theme="dark"] .el-checkbox__label,
+[data-theme="dark"] .el-radio__label {
+  color: var(--color-text-primary);
+}
+
+/* Form */
+[data-theme="dark"] .el-form-item__label {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-form-item__error {
+  color: #f87171;
+}
+
+/* Alert */
+[data-theme="dark"] .el-alert--info {
+  --el-alert-bg-color: var(--color-bg-glass);
+}
+
+/* DatePicker / TimePicker */
+[data-theme="dark"] .el-picker-panel {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-date-picker__header-label {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-date-table td.current:not(.disabled) .el-date-table-cell__text {
+  background-color: var(--color-accent);
+}
+[data-theme="dark"] .el-date-table td.available:hover {
+  color: var(--color-accent);
+}
+[data-theme="dark"] .el-month-table td.current .cell,
+[data-theme="dark"] .el-year-table td.current .cell {
+  color: var(--color-accent);
+}
+
+/* MessageBox */
+[data-theme="dark"] .el-message-box {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+}
+[data-theme="dark"] .el-message-box__title {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-message-box__message {
+  color: var(--color-text-secondary);
+}
+[data-theme="dark"] .el-message-box__input .el-input__inner {
+  background-color: var(--color-bg-glass);
+  color: var(--color-text-primary);
+}
+
+/* Notification */
+[data-theme="dark"] .el-notification {
+  background-color: var(--color-bg-surface);
+  border-color: var(--color-border-primary);
+}
+[data-theme="dark"] .el-notification__title {
+  color: var(--color-text-primary);
+}
+[data-theme="dark"] .el-notification__content {
+  color: var(--color-text-secondary);
+}
+
+/* Avatar fallback (保持亮色，因为它是品牌色) */
+.avatar-initials {
+  --el-avatar-bg-color: var(--el-color-primary-light-3, #f97316);
+  color: #fff;
+  font-weight: 600;
+  font-size: inherit;
+  user-select: none;
+}
+
+/* ============================================================
+   Wiki 链接样式
+   ============================================================ */
+.wiki-link {
+  text-decoration: none;
+  border-bottom: 1px dashed;
+  padding-bottom: 1px;
+  transition: all 0.15s ease;
+}
+.wiki-link-resolved {
+  color: #f97316;
+  border-bottom-color: #f97316;
+  cursor: pointer;
+}
+.wiki-link-resolved:hover {
+  color: #ea580c;
+  border-bottom-style: solid;
+  background: rgba(249, 115, 22, 0.06);
+}
+.wiki-link-broken {
+  color: #dc2626;
+  border-bottom-color: #dc2626;
+  cursor: help;
+  text-decoration: line-through;
+  text-decoration-color: rgba(220, 38, 38, 0.3);
+}
+
+[data-theme="dark"] .wiki-link-resolved {
+  color: #fb923c;
+  border-bottom-color: #fb923c;
+}
+[data-theme="dark"] .wiki-link-resolved:hover {
+  background: rgba(251, 146, 60, 0.1);
+}
+[data-theme="dark"] .wiki-link-broken {
+  color: #f87171;
+  border-bottom-color: #f87171;
+}
+
+/* ============================================================
+   Glass 卡片工具类
+   ============================================================ */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+}
+.glass-card-hover:hover {
+  background: var(--color-bg-glass-hover);
+  box-shadow: var(--shadow-glass-hover);
+}
+
+/* ============================================================
+   全局链接颜色
+   ============================================================ */
+[data-theme="dark"] a:not([class]) {
+  color: var(--color-accent);
+}

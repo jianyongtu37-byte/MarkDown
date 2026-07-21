@@ -9,16 +9,27 @@
   }
 }
 
-/* Avatar initials fallback (replaces DiceBear external service) */
-.avatar-initials {
-  --el-avatar-bg-color: var(--el-color-primary-light-3, #f97316);
-  color: #fff;
-  font-weight: 600;
-  font-size: inherit;
-  user-select: none;
+/* Reading mode */
+body.reading-mode .glass-navbar,
+body.reading-mode .toc-sidebar,
+body.reading-mode .mobile-bottom-tab,
+body.reading-mode .comment-section,
+body.reading-mode .rag-chat-panel,
+body.reading-mode .article-recommendations,
+body.reading-mode .breadcrumb-wrapper,
+body.reading-mode .knowledge-graph-panel,
+body.reading-mode .local-graph-panel {
+  display: none !important;
 }
-.avatar-initials-large {
-  font-size: 2rem;
+body.reading-mode main {
+  padding-top: 0 !important;
+}
+body.reading-mode .article-content-area {
+  max-width: 800px;
+  margin: 0 auto;
+  font-size: 18px;
+  line-height: 1.85;
+  padding-top: 2rem;
 }
 
 /* Reduced motion: remove backdrop blur for performance and comfort */
@@ -36,5 +47,14 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="dark"] .backdrop-blur-lg,
+  [data-theme="dark"] .backdrop-blur-xl,
+  [data-theme="dark"] .backdrop-blur-2xl,
+  [data-theme="dark"] .backdrop-blur-3xl {
+    background-color: rgb(15 23 42 / 94%) !important;
   }
 }

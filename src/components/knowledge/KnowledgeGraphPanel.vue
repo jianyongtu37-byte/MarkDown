@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, nextTick, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Graph } from '@antv/g6'
 import { knowledgeGraphApi } from '@/utils/api'
 import type { KnowledgeGraph } from '@/types/knowledgeGraph'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Refresh, Delete, WarningFilled } from '@element-plus/icons-vue'
+import { getNodeColor, getRelationLabel, computeNodeSizes, NODE_COLORS, NODE_LABELS } from '@/utils/graphStyles'
 
 const props = defineProps<{
   articleId: number
 }>()
+
+const router = useRouter()
 
 const graphData = ref<KnowledgeGraph | null>(null)
 const loading = ref(false)
@@ -27,13 +31,20 @@ async function loadGraph() {
       loading.value = false
       if (result.data.status === 2 && result.data.nodes?.length > 0) {
         await nextTick()
-        await initGraph()
+        try {
+          await initGraph()
+        } catch (graphErr: any) {
+          console.error('知识图谱渲染失败:', graphErr)
+          ElMessage.error('图谱渲染失败: ' + (graphErr.message || '未知错误'))
+        }
       }
     } else {
       loading.value = false
     }
-  } catch {
+  } catch (err: any) {
     loading.value = false
+    console.error('加载知识图谱数据失败:', err)
+    ElMessage.error(err.message || '加载知识图谱失败')
   }
 }
 
@@ -119,14 +130,23 @@ async function initGraph() {
 
   const rawNodes = graphData.value.nodes || []
   const rawEdges = graphData.value.edges || []
+  const nodeSizes = computeNodeSizes(rawNodes, rawEdges)
 
   const nodes = rawNodes.map(n => ({
     id: String(n.id),
-    data: { name: n.name, type: n.type, description: n.description },
+    data: { name: n.name, type: n.type, description: n.description, articleId: n.articleId, size: nodeSizes.get(n.id) || 28 },
     style: {
-      labelText: n.name,
+      x: Math.random() * containerWidth * 0.8 + containerWidth * 0.1,
+      y: Math.random() * containerHeight * 0.8 + containerHeight * 0.1,
+      labelText: n.name.length > 12 ? n.name.substring(0, 12) + '...' : n.name,
       fill: getNodeColor(n.type),
-      size: 40,
+      stroke: '#ffffffcc',
+      lineWidth: 2,
+      size: nodeSizes.get(n.id) || 28,
+      shadowColor: getNodeColor(n.type) + '30',
+      shadowBlur: 6,
+      shadowOffsetX: 1,
+      shadowOffsetY: 2,
     },
   }))
 
@@ -136,8 +156,9 @@ async function initGraph() {
     data: { relation: e.relation, description: e.description },
     style: {
       labelText: getRelationLabel(e.relation),
-      stroke: '#c0c0c0',
-      lineWidth: 1,
+      stroke: '#cbd5e188',
+      lineWidth: Math.max(0.5, (e.weight || 1) * 1.2),
+      endArrow: true,
     },
   }))
 
@@ -151,11 +172,13 @@ async function initGraph() {
       type: 'd3-force',
       animation: false,
       iterations: 300,
-      nodeSize: 50,
+      iterations: 500,
+      nodeSize: (d: any) => d.data?.size || d.style?.size || 40,
+      nodeSpacing: 16,
       linkDistance: 250,
-      nodeStrength: -800,
-      edgeStrength: 0.5,
-      gravity: 0.1,
+      nodeStrength: -350,
+      edgeStrength: 0.25,
+      centerStrength: 0.03,
       alpha: 1,
       alphaDecay: 0.005,
       alphaMin: 0.001,
@@ -163,6 +186,7 @@ async function initGraph() {
       collideStrength: 2,
     },
     behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element', 'auto-adapt-label'],
+    zoomRange: [0.2, 5],
     node: {
       type: 'circle',
       style: {
@@ -188,48 +212,16 @@ async function initGraph() {
   })
 
   await graph.render()
+  graph.fitView({ padding: 60 })
 
   graph.on('node:click', (evt: any) => {
     const nodeData = evt.target?.getData?.()
-    if (nodeData?.data) {
+    if (nodeData?.data?.articleId) {
+      router.push(`/articles/${nodeData.data.articleId}`)
+    } else if (nodeData?.data) {
       ElMessage.info(`${nodeData.data.name}: ${nodeData.data.description || ''}`)
     }
   })
-}
-
-function getRelationLabel(relation: string): string {
-  const map: Record<string, string> = {
-    related_to: '关联',
-    part_of: '属于',
-    has_part: '包含',
-    subclass_of: '子类',
-    instance_of: '实例',
-    located_in: '位于',
-    depends_on: '依赖',
-    causes: '导致',
-    same_as: '相同',
-    opposite_of: '对立',
-    developed_by: '开发者',
-    owns: '拥有',
-    works_at: '任职',
-    founded_by: '创始人',
-    headquartered_in: '总部位于',
-    acquired_by: '被收购',
-    competes_with: '竞争',
-  }
-  return map[relation] || relation
-}
-
-function getNodeColor(type: string): string {
-  const colors: Record<string, string> = {
-    technology: '#409EFF',
-    concept: '#67C23A',
-    tool: '#E6A23C',
-    person: '#F56C6C',
-    org: '#909399',
-    protocol: '#b37feb',
-  }
-  return colors[type] || '#409EFF'
 }
 
 function getStatusText(status: number): string {
@@ -358,16 +350,9 @@ watch(() => props.articleId, () => {
         ></div>
 
         <div class="flex flex-wrap gap-3 mt-3">
-          <div v-for="(color, type) in {
-            technology: '#409EFF',
-            concept: '#67C23A',
-            tool: '#E6A23C',
-            person: '#F56C6C',
-            org: '#909399',
-            protocol: '#b37feb',
-          }" :key="type" class="flex items-center gap-1 text-xs text-slate-500">
+          <div v-for="(color, type) in NODE_COLORS" :key="type" class="flex items-center gap-1 text-xs text-slate-500">
             <span class="w-2.5 h-2.5 rounded-full inline-block" :style="{ backgroundColor: color }"></span>
-            <span>{{ type }}</span>
+            <span>{{ NODE_LABELS[type] || type }}</span>
           </div>
         </div>
       </div>

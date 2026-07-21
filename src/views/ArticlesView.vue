@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSwipeBack, usePullToRefresh } from '@/composables/useTouchGestures'
 import { createLongPressHandlers } from '@/composables/useLongPress'
 import MobileContextMenu from '@/components/mobile/MobileContextMenu.vue'
+import BreadcrumbNav from '@/components/misc/BreadcrumbNav.vue'
 import type { ArticleVO, ArticleQueryParams } from '@/types/article'
 import type { Category } from '@/types/category'
 import type { SearchResultVO } from '@/types/search'
@@ -51,6 +52,18 @@ const contextMenuActions = computed(() => {
       ElMessage.success('链接已复制')
     }},
   ]
+})
+
+const breadcrumbItems = computed(() => {
+  const items: Array<{ label: string; to?: string }> = [
+    { label: '首页', to: '/' },
+    { label: '文章列表' },
+  ]
+  if (searchParams.value.categoryId) {
+    const cat = categories.value.find(c => c.id === searchParams.value.categoryId)
+    if (cat) items.splice(1, 0, { label: cat.name })
+  }
+  return items
 })
 
 // 数据
@@ -182,7 +195,6 @@ const stripHtml = (html?: string) => html?.replace(/<[^>]*>/g, '') || ''
 const convertSearchResultsToArticles = (results: SearchResultVO[]): ArticleVO[] => {
   return results.map(result => ({
     id: result.id,
-    userId: result.userId || 0,
     title: stripHtml(result.highlightedTitle || result.title),
     content: stripHtml(result.highlightedContent || result.contentSnippet || ''),
     viewCount: result.viewCount || 0,
@@ -374,12 +386,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="relative overflow-hidden">
-    <!-- Ambient blob -->
-    <div class="absolute top-[5%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none -z-0"></div>
-
-    <div class="relative z-10 py-16">
+  <div>
+    <div class="py-16">
       <div class="max-w-[1200px] mx-auto px-6">
+        <!-- Breadcrumb -->
+        <BreadcrumbNav :items="breadcrumbItems" />
+
         <!-- Header -->
         <div class="flex justify-between items-start mb-10 pt-12">
           <div>

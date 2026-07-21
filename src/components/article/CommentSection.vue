@@ -51,7 +51,7 @@
         class="comment-item-wrapper"
       >
         <!-- 一级评论 -->
-        <div class="comment-item" :class="{ 'is-author-comment': comment.userId === currentUserId }">
+        <div :id="'comment-' + comment.id" class="comment-item" :class="{ 'is-author-comment': comment.userId === currentUserId }">
           <div class="comment-avatar">
             <el-avatar :size="36">
               {{ comment.userNickname?.charAt(0) || '?' }}
@@ -86,6 +86,7 @@
               <div
                 v-for="reply in comment.replies"
                 :key="reply.id"
+                :id="'comment-' + reply.id"
                 class="reply-item"
               >
                 <div class="reply-avatar">
@@ -144,7 +145,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotSquare } from '@element-plus/icons-vue'
 import { commentApi } from '@/utils/api'
@@ -155,6 +157,7 @@ const props = defineProps<{
   currentUserId?: number
 }>()
 
+const route = useRoute()
 const emit = defineEmits<{
   (e: 'comment-count-change', count: number): void
 }>()
@@ -279,8 +282,19 @@ const formatTime = (time?: string) => {
   })
 }
 
-onMounted(() => {
-  loadComments()
+onMounted(async () => {
+  await loadComments()
+  // 如果 URL 带有评论锚点，滚动到对应评论
+  const hash = route.hash
+  if (hash && hash.startsWith('#comment-')) {
+    await nextTick()
+    const el = document.getElementById(hash.slice(1))
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('comment-highlight')
+      setTimeout(() => el.classList.remove('comment-highlight'), 2000)
+    }
+  }
 })
 </script>
 
@@ -452,5 +466,14 @@ onMounted(() => {
   padding-top: 20px;
   border-top: 1px solid var(--border-primary-fallback);
   margin-top: 16px;
+}
+
+.comment-highlight {
+  animation: comment-flash 1s ease-in-out 2;
+}
+
+@keyframes comment-flash {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(251, 191, 36, 0.25); }
 }
 </style>

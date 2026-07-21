@@ -142,10 +142,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="relative min-h-screen overflow-hidden">
-    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
-
-    <section class="relative z-10 py-8 sm:py-16">
+  <div class="min-h-screen">
+    <section class="py-8 sm:py-16">
       <div class="max-w-[1200px] mx-auto px-4 sm:px-6">
         <div class="flex justify-between items-start mb-6 sm:mb-8 pt-4 sm:pt-12">
           <div class="header-left">

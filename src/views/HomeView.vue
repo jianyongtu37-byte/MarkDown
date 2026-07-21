@@ -90,6 +90,29 @@ useSwipeBack()
             <h3 class="text-sm sm:text-lg font-semibold text-slate-800 group-hover:text-orange-600 transition-colors">阅读历史</h3>
             <p class="text-sm text-slate-400 hidden sm:block">查看您的文章阅读记录</p>
           </router-link>
+
+          <router-link to="/daily-notes" class="group flex flex-col items-center justify-center gap-2 sm:gap-3 min-h-[100px] sm:min-h-[140px] p-4 sm:p-6 glass-card rounded-2xl glass-card-hover hover:-translate-y-0.5 transition-all duration-200 no-underline relative overflow-hidden">
+            <div class="absolute left-0 top-0 bottom-0 w-1 bg-orange-400 group-hover:bg-orange-500 transition-colors rounded-l-2xl"></div>
+            <svg class="w-7 h-7 sm:w-9 sm:h-9 text-orange-500 group-hover:text-orange-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <h3 class="text-sm sm:text-lg font-semibold text-slate-800 group-hover:text-orange-600 transition-colors">每日笔记</h3>
+            <p class="text-sm text-slate-400 hidden sm:block">按日期组织您的日记和笔记</p>
+          </router-link>
+
+          <router-link to="/flashcards" class="group flex flex-col items-center justify-center gap-2 sm:gap-3 min-h-[100px] sm:min-h-[140px] p-4 sm:p-6 glass-card rounded-2xl glass-card-hover hover:-translate-y-0.5 transition-all duration-200 no-underline relative overflow-hidden">
+            <div class="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 group-hover:bg-orange-400 transition-colors rounded-l-2xl"></div>
+            <svg class="w-7 h-7 sm:w-9 sm:h-9 text-cyan-500 group-hover:text-orange-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            <h3 class="text-sm sm:text-lg font-semibold text-slate-800 group-hover:text-orange-600 transition-colors">闪卡复习</h3>
+            <p class="text-sm text-slate-400 hidden sm:block">间隔重复记忆，高效学习</p>
+          </router-link>
         </div>
       </div>
     </section>

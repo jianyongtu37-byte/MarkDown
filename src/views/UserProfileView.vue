@@ -152,7 +152,7 @@ onMounted(async () => {
 
 <template>
   <div class="relative min-h-screen overflow-hidden">
-    <div class="absolute top-[-10%] right-0 w-[400px] h-[400px] rounded-full bg-gradient-to-br from-orange-100/30 to-transparent pointer-events-none"></div>
+
 
     <section class="relative z-10 py-8 sm:py-16">
       <div class="max-w-[1200px] mx-auto px-4 sm:px-6">
@@ -501,5 +501,18 @@ onMounted(async () => {
   gap: 12px;
   max-width: 480px;
   margin: 0 auto;
+}
+
+/* Dark mode */
+[data-theme="dark"] .profile-collapse :deep(.el-collapse-item) {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .profile-collapse :deep(.el-collapse-item__header) {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+[data-theme="dark"] .sticky-action-bar {
+  background: rgba(15, 23, 42, 0.9);
+  border-top-color: rgba(148, 163, 184, 0.12);
 }
 </style>

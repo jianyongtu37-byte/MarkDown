@@ -69,6 +69,10 @@
   transform: none;
 }
 
+[data-theme="dark"] .btn-primary {
+  color: #fff;
+}
+
 /* ════════════════════════════════════════
    DANGER — solid red, destructive actions
    ════════════════════════════════════════ */
@@ -286,6 +290,58 @@
 }
 .el-button.is-link:hover { color: var(--btn-accent); }
 .el-button.is-link.text-error { --el-button-text-color: #dc2626; }
+
+/* ══════════════════════════════════════════════
+   DARK MODE
+   ══════════════════════════════════════════════ */
+[data-theme="dark"] .btn-glass-pill,
+[data-theme="dark"] .btn-interaction {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+[data-theme="dark"] .btn-glass-pill:hover,
+[data-theme="dark"] .btn-interaction:hover {
+  color: var(--btn-accent);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgb(249 115 22 / 30%);
+}
+[data-theme="dark"] .btn-glass-pill:active,
+[data-theme="dark"] .btn-interaction:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .btn-glass-base {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+[data-theme="dark"] .btn-glass-base:hover {
+  color: var(--btn-accent);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgb(249 115 22 / 30%);
+}
+
+[data-theme="dark"] .btn-glass-ghost {
+  color: #94a3b8;
+}
+[data-theme="dark"] .btn-glass-ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(148, 163, 184, 0.15);
+}
+[data-theme="dark"] .btn-glass-ghost:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .btn-surface {
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+[data-theme="dark"] .el-button.is-link {
+  --el-button-text-color: #94a3b8;
+}
 
 /* ══════════════════════════════════════════════
    REDUCED MOTION
